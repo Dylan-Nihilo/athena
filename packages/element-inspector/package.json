@@ -1,0 +1,33 @@
+{
+  "name": "@athena/element-inspector",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./style.css": "./dist/style.css"
+  },
+  "scripts": {
+    "build": "vite build && tsc -p tsconfig.build.json",
+    "dev": "vite --host 127.0.0.1"
+  },
+  "peerDependencies": {
+    "react-aria-components": "^1.22.1",
+    "lucide-react": "^1.64.0",
+    "react": "^19",
+    "react-dom": "^19"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5"
+  },
+  "files": [
+    "dist"
+  ]
+}
