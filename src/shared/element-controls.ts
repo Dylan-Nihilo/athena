@@ -155,7 +155,7 @@ export function controlData(
   element: ElementDetails,
   controls: ElementControl[],
 ): Record<string, string | number> {
-  return Object.fromEntries(
+  const data: Record<string, string | number> = Object.fromEntries(
     controls.map((control) => {
       const spec = controlProperties[control.property];
       const raw = element.computed[control.property] ?? '';
@@ -169,6 +169,10 @@ export function controlData(
       ];
     }),
   );
+  // A padding shorthand can have four independent values. Retain it alongside the slider binding.
+  if (controls.some((control) => control.property === 'padding'))
+    data._padding = element.computed.padding ?? '';
+  return data;
 }
 function controlSection(property: ControlProperty) {
   if (['font-size', 'font-weight', 'letter-spacing', 'text-align', 'color'].includes(property))
@@ -223,6 +227,7 @@ export function elementControlMessages(
                 ...spec,
                 ...control,
                 value: { path: '/' + control.property },
+                ...(control.property === 'padding' ? { shorthand: { path: '/_padding' } } : {}),
                 type: undefined,
               };
             })

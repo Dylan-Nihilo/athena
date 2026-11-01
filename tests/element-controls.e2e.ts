@@ -62,7 +62,7 @@ try {
   await expect(page.getByRole('slider', { name: '圆角滑块' })).toBeVisible();
   await expect(page.locator('.inspector-context')).toContainText('按钮');
   const slider = page.getByRole('slider', { name: '圆角滑块' });
-  const track = page.locator('.cell-slider').filter({ has: slider }).locator('.cell-slider__track');
+  const track = page.locator('.ei-track').filter({ has: slider });
   const box = await track.boundingBox();
   assert(box);
   const min = Number(await slider.getAttribute('min'));
@@ -70,12 +70,12 @@ try {
   const position = (value: number) => box.x + ((value - min) / (max - min)) * box.width;
   await page.mouse.move(position(8), box.y + box.height / 2);
   await page.mouse.down();
-  for (let value = 9; value <= 68; value++)
-    await page.mouse.move(position(value), box.y + box.height / 2);
+  // The shortest supported track has fewer CSS pixels than values. Its endpoint is exact at any density.
+  await page.mouse.move(position(max) + 2, box.y + box.height / 2, { steps: 60 });
   await page.mouse.up();
   await expect
     .poll(async () => (await state()).browser.selectedElement?.computed?.['border-radius'])
-    .toBe('68px');
+    .toBe(max + 'px');
   assert.equal((await state()).browser.previewEdits.length, 1);
   await page.getByRole('button', { name: '撤销页面修改', exact: true }).click();
   await expect
@@ -87,7 +87,7 @@ try {
   await page.getByRole('button', { name: '背景颜色选择器', exact: true }).click();
   await expect(page.getByRole('textbox', { name: '十六进制颜色' })).toBeVisible();
   await page.screenshot({
-    path: path.join(root, 'test-results/heroui-color-popover.png'),
+    path: path.join(root, 'test-results/inspector-color-popover.png'),
     animations: 'disabled',
   });
   const hex = page.getByRole('textbox', { name: '十六进制颜色' });
@@ -101,21 +101,92 @@ try {
   await expect
     .poll(async () => (await state()).browser.selectedElement.computed['background-color'])
     .toBe('rgb(51, 102, 153)');
-  await page.locator('.live-choice').filter({ hasText: '文字对齐' }).getByRole('button').click();
-  await page.getByRole('option', { name: '居中', exact: true }).click();
+  await page.getByRole('radio', { name: '居中', exact: true }).check();
   await expect
     .poll(async () => (await state()).browser.selectedElement.computed['text-align'])
     .toBe('center');
+  await page.mouse.move(0, 0);
+  await page.getByRole('region', { name: '元素检查器' }).screenshot({
+    path: path.join(root, 'test-results/inspector-panel.png'),
+    animations: 'disabled',
+  });
   await page.getByRole('button', { name: '撤销页面修改', exact: true }).click();
+  await expect
+    .poll(async () => (await state()).browser.selectedElement.computed['text-align'])
+    .toBe(selected.computed['text-align']);
+  const bg = page.getByRole('textbox', { name: '背景颜色值', exact: true });
+  // Drafts cannot silently replace the live CSS when they are invalid or cancelled.
+  const beforeDrafts = (await state()).browser.previewEdits.length;
+  await bg.fill('var(--missing)');
+  await bg.press('Enter');
+  await expect(bg).toHaveAttribute('aria-invalid', 'true');
+  await bg.focus();
+  await bg.press('Escape');
+  const radiusValue = page.getByRole('spinbutton', { name: '圆角数值', exact: true });
+  await radiusValue.fill('201');
+  await radiusValue.press('Enter');
+  await expect(radiusValue).toHaveAttribute('aria-invalid', 'true');
+  await radiusValue.focus();
+  await radiusValue.press('Escape');
+  await expect(radiusValue).toHaveValue('8');
+  assert.equal((await state()).browser.previewEdits.length, beforeDrafts);
+  await radiusValue.fill('68');
+  await radiusValue.press('Enter');
+  await expect
+    .poll(async () => (await state()).browser.selectedElement.computed['border-radius'])
+    .toBe('68px');
+  await page.getByRole('button', { name: '撤销页面修改', exact: true }).click();
+  await expect(radiusValue).toHaveValue('8');
+  await bg.fill('rgba(20, 40, 90, 0.5)');
+  await bg.press('Enter');
+  await expect
+    .poll(async () => (await state()).browser.selectedElement.computed['background-color'])
+    .toBe('rgba(20, 40, 90, 0.5)');
+  await page.getByRole('button', { name: '背景颜色选择器', exact: true }).click();
+  await hex.fill('224488');
+  await hex.press('Tab');
+  await expect
+    .poll(async () => (await state()).browser.selectedElement.computed['background-color'])
+    .toBe('rgba(34, 68, 136, 0.5)');
+  await page.keyboard.press('Escape');
+  const undo = page.getByRole('button', { name: '撤销页面修改', exact: true });
+  await undo.click();
+  await expect
+    .poll(async () => (await state()).browser.selectedElement.computed['background-color'])
+    .toBe('rgba(20, 40, 90, 0.5)');
+  await undo.click();
+  await expect
+    .poll(async () => (await state()).browser.selectedElement.computed['background-color'])
+    .toBe('rgb(51, 102, 153)');
+  // Asymmetric padding stays asymmetric when only the right edge is edited.
+  const right = page.getByRole('spinbutton', { name: '右内边距数值', exact: true });
+  await right.fill('44');
+  await right.press('Enter');
+  await expect
+    .poll(async () => (await state()).browser.selectedElement.computed.padding)
+    .toBe('18px 44px 18px 32px');
+  await undo.click();
+  await expect(right).toHaveValue('32');
+  await page.getByRole('button', { name: '内边距分别调整四边' }).click();
+  const inset = page.getByRole('spinbutton', { name: '内边距数值', exact: true });
+  await inset.fill('12');
+  await inset.press('Enter');
+  await expect
+    .poll(async () => (await state()).browser.selectedElement.computed.padding)
+    .toBe('12px');
+  await undo.click();
+  await expect
+    .poll(async () => (await state()).browser.selectedElement.computed.padding)
+    .toBe('18px 32px');
+  await page.getByRole('button', { name: '内边距分别调整四边' }).click();
+  await expect(right).toHaveValue('32');
   const samples: number[] = [];
   for (let iteration = 0; iteration < 12; iteration++) {
     const red = iteration % 2 === 1;
-    const colorValue = page.getByRole('textbox', { name: '背景颜色颜色值', exact: true });
+    const colorValue = page.getByRole('textbox', { name: '背景颜色值', exact: true });
     await colorValue.fill(red ? '#e04040' : '#20a050');
     const latency = await page.evaluate(async (red) => {
-      const picker = document.querySelector(
-        'input[aria-label="背景颜色颜色值"]',
-      ) as HTMLInputElement;
+      const picker = document.querySelector('input[aria-label="背景颜色值"]') as HTMLInputElement;
       const image = document.querySelector('.browser-frame') as HTMLImageElement;
       const state = await window.workbench.invoke<any>('app:snapshot');
       const target = state.browser.selectedElement.bounds;

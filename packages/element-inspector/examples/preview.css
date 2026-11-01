@@ -1,0 +1,169 @@
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: #f4f5f8;
+  color: var(--ei-ink);
+  font: 13px var(--ei-font);
+  -webkit-font-smoothing: antialiased;
+}
+.specimen {
+  max-width: 1080px;
+  margin: min(8vh, 80px) auto;
+  padding: 0 24px;
+}
+.specimen-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 0 17px;
+}
+.specimen-header > svg {
+  color: var(--ei-accent);
+  width: 21px;
+}
+.specimen-header > span {
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.04em;
+}
+.specimen-header i {
+  color: #afb2be;
+  font-style: normal;
+}
+.specimen-header h1 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 550;
+}
+.specimen-header button {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px;
+  font: 12px var(--ei-font);
+  color: var(--ei-secondary);
+  border: 1px solid var(--ei-edge);
+  border-radius: var(--ei-radius);
+  background: var(--ei-paper);
+  cursor: pointer;
+}
+.specimen-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  border: 1px solid var(--ei-edge);
+  border-radius: 12px;
+  background: var(--ei-paper);
+  overflow: hidden;
+}
+.specimen-artboard {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-right: 1px solid var(--ei-rule);
+}
+.specimen-caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--ei-rule);
+}
+.specimen-caption code {
+  color: var(--ei-accent-dark);
+  font: 11px var(--ei-mono);
+}
+.specimen-stage {
+  display: grid;
+  place-items: center;
+  flex: 1;
+  min-height: 240px;
+  padding: 28px;
+  overflow: auto;
+  background-color: #fcfcfe;
+  background-image: radial-gradient(#d6d7e3 0.8px, transparent 0.8px);
+  background-size: 12px 12px;
+}
+.specimen-selection {
+  position: relative;
+  width: min(268px, 100%);
+  border: 1px solid #9997d1;
+}
+.specimen-selection p {
+  margin: 0;
+  width: 100%;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  border-width: 1px;
+  border-color: #aaa6c9;
+}
+.specimen-selection i {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border: 1px solid #7673b8;
+  background: white;
+}
+.specimen-selection i:nth-of-type(odd) {
+  left: -3px;
+}
+.specimen-selection i:nth-of-type(even) {
+  right: -3px;
+}
+.specimen-selection i:nth-of-type(-n + 2) {
+  top: -3px;
+}
+.specimen-selection i:nth-of-type(n + 3) {
+  bottom: -3px;
+}
+.specimen-source {
+  padding: 20px;
+  border-top: 1px solid var(--ei-rule);
+}
+.specimen-source h2 {
+  margin: 0 0 10px;
+  font: 600 11px var(--ei-mono);
+}
+.specimen-source pre {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  margin: 0;
+  color: var(--ei-muted);
+  font: 11px/1.7 var(--ei-mono);
+}
+.specimen-source b {
+  font-weight: 500;
+  color: var(--ei-accent-dark);
+}
+.specimen-controls {
+  min-width: 0;
+  padding: 4px 24px 16px;
+}
+.specimen-controls .ei-segments svg {
+  width: 15px;
+  height: 15px;
+}
+.specimen-controls .ei-grid > :only-child {
+  grid-column: 1/-1;
+}
+@media (max-width: 760px) {
+  .specimen {
+    margin: 20px auto;
+    padding: 0 14px;
+  }
+  .specimen-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .specimen-artboard {
+    border-right: 0;
+    border-bottom: 1px solid var(--ei-rule);
+  }
+  .specimen-source {
+    display: none;
+  }
+  .specimen-stage {
+    min-height: 150px;
+  }
+}

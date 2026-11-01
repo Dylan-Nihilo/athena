@@ -1,10 +1,24 @@
-import { Input, TextArea, Tabs } from '@heroui/react';
-import { ChoiceSelect } from './ChoiceSelect';
+import { Tabs } from '@heroui/react';
+import {
+  InspectorInput,
+  InspectorSelect,
+  InspectorTextarea,
+} from '../../packages/element-inspector/src';
 import { ActionButton } from './ui';
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import type { ElementControlSurface } from '../shared/element-controls';
 const ElementControls = lazy(() => import('./ElementControls'));
-import { ArrowUpRight, Check, ChevronRight, Loader2, Search, Undo2, X } from 'lucide-react';
+import {
+  ArrowUpRight,
+  Check,
+  ChevronRight,
+  Loader2,
+  Scan,
+  ScanLine,
+  Search,
+  Undo2,
+  X,
+} from 'lucide-react';
 import type {
   ElementAnimation,
   ElementDetails,
@@ -268,14 +282,33 @@ export function ElementInspector({
   return (
     <section className="element-inspector" aria-label="元素检查器" hidden={hidden}>
       <header className="inspector-heading">
+        <span className="inspector-mark" aria-hidden>
+          <ScanLine size={20} />
+        </span>
         <div className="inspector-target-summary">
           <strong title={details?.name}>{details?.name || '选择一个元素'}</strong>
           <span className="inspector-context">
-            {details
-              ? `${details.semantics?.kind === 'button' ? '按钮' : details.semantics?.kind === 'link' ? '链接' : details.semantics?.kind === 'textbox' ? '输入框' : details.tag}${details.semantics?.source === 'inferred' ? ' · 推断' : ''} · <${details.tag}>`
-              : '在网页中选取，或按文字和 CSS 查找'}
+            {details ? (
+              <>
+                <code>{`<${details.tag}>`}</code>
+                {
+                  ({ button: '按钮', link: '链接', textbox: '输入框' } as Record<string, string>)[
+                    details.semantics?.kind ?? ''
+                  ]
+                }
+                {details.semantics?.source === 'inferred' && <span>推断</span>}
+              </>
+            ) : (
+              '在网页中选取，或按文字和 CSS 查找'
+            )}
           </span>
         </div>
+        {details?.bounds && (
+          <span className="element-dimensions" title="元素尺寸（CSS 像素）">
+            <Scan size={12} aria-hidden />
+            {Math.round(details.bounds.width)} × {Math.round(details.bounds.height)}
+          </span>
+        )}
         {details && (
           <ActionButton
             className={`icon-button ${searchOpen ? 'is-on' : ''}`}
@@ -318,16 +351,16 @@ export function ElementInspector({
         }}
       >
         <Search size={13} />
-        <ChoiceSelect
+        <InspectorSelect
           label="元素查找方式"
           value={searchKind}
-          onChange={(value) => setSearchKind(value as 'text' | 'selector')}
           options={[
             { value: 'text', label: '文字' },
             { value: 'selector', label: 'CSS' },
           ]}
+          onChange={(value) => setSearchKind(value as typeof searchKind)}
         />
-        <Input
+        <InspectorInput
           aria-label="查找页面元素"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
@@ -421,7 +454,7 @@ export function ElementInspector({
                   <label className="element-text-label" htmlFor="element-text-value">
                     元素文字
                   </label>
-                  <TextArea
+                  <InspectorTextarea
                     id="element-text-value"
                     aria-label="元素文字"
                     value={text}
@@ -447,8 +480,11 @@ export function ElementInspector({
                           : undefined
                       }
                     >
-                      <span>{label}</span>
-                      <Input
+                      <span>
+                        {label}
+                        <code>{name}</code>
+                      </span>
+                      <InspectorInput
                         aria-label={label}
                         value={styles[name] ?? details.computed[name] ?? ''}
                         onChange={(event) =>
@@ -463,13 +499,15 @@ export function ElementInspector({
                 </div>
               ) : section === 'motion' ? (
                 <div className="motion-fields">
-                  <div className="motion-choice-field">
-                    <span>动效</span>
-                    <ChoiceSelect
+                  <div>
+                    <label className="ei-label" htmlFor="element-motion-preset">
+                      动效
+                    </label>
+                    <InspectorSelect
+                      id="element-motion-preset"
                       label="元素动效"
                       value={motion}
-                      isDisabled={busy}
-                      onChange={(value) => setMotion(value as MotionChoice)}
+                      disabled={busy}
                       options={[
                         { value: 'none', label: '无' },
                         ...(details.animation
@@ -479,11 +517,12 @@ export function ElementInspector({
                         { value: 'bounce', label: '弹跳' },
                         { value: 'breathe-bounce', label: '呼吸弹跳' },
                       ]}
+                      onChange={(value) => setMotion(value as MotionChoice)}
                     />
                   </div>
                   <label>
                     <span>周期（秒）</span>
-                    <Input
+                    <InspectorInput
                       aria-label="动效周期"
                       type="number"
                       min="0.1"
@@ -585,10 +624,10 @@ export function ElementInspector({
                 {busy ? <Loader2 size={13} className="spin" /> : <Check size={13} />}应用预览
               </ActionButton>
             )}
+            <div className="inspector-note inspector-feedback" role="status">
+              {status || '页面预览 · 刷新后恢复'}
+            </div>
           </footer>
-          <div className="inspector-note inspector-feedback" role="status">
-            {status || '页面预览可撤销，刷新后恢复。'}
-          </div>
         </>
       ) : (
         <div className="inspector-empty" role="status">
