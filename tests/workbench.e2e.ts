@@ -198,7 +198,8 @@ try {
   const firstId = (await snapshot()).browser.activeTabId;
   await page.getByRole('button', { name: '录制', exact: true }).click();
   await page.getByRole('button', { name: '元素检查器', exact: true }).click();
-  await page.getByRole('combobox', { name: '元素查找方式' }).selectOption('selector');
+  await page.getByRole('button', { name: /元素查找方式/ }).click();
+  await page.getByRole('option', { name: 'CSS', exact: true }).click();
   await page.getByRole('textbox', { name: '查找页面元素' }).fill('[data-testid="headline"]');
   await page.getByRole('button', { name: '查找', exact: true }).click();
   await page.locator('.element-results > button').filter({ hasText: '需要修改的标题' }).click();
@@ -321,7 +322,8 @@ try {
     .getByRole('textbox', { name: '阴影', exact: true })
     .fill('0 4px 12px rgba(159, 18, 57, 0.24)');
   await page.getByRole('tab', { name: '动效', exact: true }).click();
-  await page.getByRole('combobox', { name: '元素动效' }).selectOption('breathe-bounce');
+  await page.getByRole('button', { name: /元素动效/ }).click();
+  await page.getByRole('option', { name: '呼吸弹跳', exact: true }).click();
   await page.getByRole('spinbutton', { name: '动效周期' }).fill('1.6');
   await page.getByRole('button', { name: '应用预览', exact: true }).click();
   const inspectSelected = () =>
@@ -354,7 +356,8 @@ try {
   assert.equal(carriedPreview.animation.duration, 1600);
   assert.equal(carriedPreview.styles['background-image'], redGradient);
   await page.getByRole('tab', { name: '元素', exact: true }).click();
-  await page.getByRole('combobox', { name: '元素动效' }).selectOption('none');
+  await page.getByRole('button', { name: /元素动效/ }).click();
+  await page.getByRole('option', { name: '无', exact: true }).click();
   await page.getByRole('button', { name: '应用预览', exact: true }).click();
   await expect.poll(async () => (await inspectSelected()).animation ?? null).toBeNull();
   await page.getByRole('button', { name: '撤销页面修改', exact: true }).click();

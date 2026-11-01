@@ -351,13 +351,14 @@ export function ElementInspector({
       >
         <Search size={13} />
         <InspectorSelect
-          aria-label="元素查找方式"
+          label="元素查找方式"
           value={searchKind}
-          onChange={(event) => setSearchKind(event.target.value as 'text' | 'selector')}
-        >
-          <option value="text">文字</option>
-          <option value="selector">CSS</option>
-        </InspectorSelect>
+          options={[
+            { value: 'text', label: '文字' },
+            { value: 'selector', label: 'CSS' },
+          ]}
+          onChange={(value) => setSearchKind(value as typeof searchKind)}
+        />
         <InspectorInput
           aria-label="查找页面元素"
           value={query}
@@ -497,21 +498,27 @@ export function ElementInspector({
                 </div>
               ) : section === 'motion' ? (
                 <div className="motion-fields">
-                  <label>
-                    <span>动效</span>
+                  <div>
+                    <label className="ei-label" htmlFor="element-motion-preset">
+                      动效
+                    </label>
                     <InspectorSelect
-                      aria-label="元素动效"
+                      id="element-motion-preset"
+                      label="元素动效"
                       value={motion}
                       disabled={busy}
-                      onChange={(event) => setMotion(event.target.value as MotionChoice)}
-                    >
-                      <option value="none">无</option>
-                      {details.animation && <option value="custom">当前自定义动效</option>}
-                      <option value="breathe">呼吸</option>
-                      <option value="bounce">弹跳</option>
-                      <option value="breathe-bounce">呼吸弹跳</option>
-                    </InspectorSelect>
-                  </label>
+                      options={[
+                        { value: 'none', label: '无' },
+                        ...(details.animation
+                          ? [{ value: 'custom', label: '当前自定义动效' }]
+                          : []),
+                        { value: 'breathe', label: '呼吸' },
+                        { value: 'bounce', label: '弹跳' },
+                        { value: 'breathe-bounce', label: '呼吸弹跳' },
+                      ]}
+                      onChange={(value) => setMotion(value as MotionChoice)}
+                    />
+                  </div>
                   <label>
                     <span>周期（秒）</span>
                     <InspectorInput

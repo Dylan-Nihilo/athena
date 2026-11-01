@@ -32,10 +32,10 @@ import '@athena/element-inspector/style.css';
 | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | `NumberControl`                                          | 拖动或方向键触发 `onChange`，手势结束触发 `onCommit`。数值框支持精确输入，Enter 或失焦提交，Escape 恢复。               |
 | `ColorControl`                                           | 色板、色相、透明度与 HEX 共用一个颜色值。文本框接受 CSS 颜色，空串交给宿主清除覆盖。宿主可用 `isAllowed` 限制可用语法。 |
-| `ChoiceControl`                                          | 带图标的选项使用可键盘操作的单选组，其余使用原生选择框。保留选项之外的原始 CSS 值。                                     |
+| `ChoiceControl`                                          | 带图标的选项使用可键盘操作的单选组，其余使用独立浮层选择菜单，支持方向键、Enter 与 Escape。保留选项之外的原始 CSS 值。  |
 | `InsetsControl`                                          | 读取一至四个 CSS 像素值，自动识别不等边内边距。可分别编辑四边或切换为统一滑块。切换模式本身不会写入页面。               |
 | `PropertySection`、`PropertyField`                       | 按属性分组，按容器宽度排布，标签与表单输入关联。                                                                        |
-| `InspectorInput`、`InspectorSelect`、`InspectorTextarea` | 用于搜索、内容、原始 CSS 和动效表单，保留原生语义。                                                                     |
+| `InspectorInput`、`InspectorSelect`、`InspectorTextarea` | 用于搜索、内容、原始 CSS 和动效表单。选择器通过 options、value 和 onChange 接入。                                       |
 
 样式通过 `--ei-*` 变量定义。正文与标签使用系统字体，数值与单位使用等宽字。默认编辑面高 34px、圆角 7px。靛蓝用于可调范围、选中项与键盘焦点，透明度使用棋盘底纹。覆盖主题时在根节点设置变量，使颜色浮层也能继承。
 

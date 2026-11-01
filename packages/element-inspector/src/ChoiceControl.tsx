@@ -1,9 +1,8 @@
 import { useId, type ReactNode } from 'react';
-import { InspectorSelect, PropertyField } from './fields';
+import { PropertyField } from './fields';
+import { InspectorSelect, type InspectorOption } from './InspectorSelect';
 
-export interface ChoiceOption {
-  value: string;
-  label: string;
+export interface ChoiceOption extends InspectorOption {
   icon?: ReactNode;
 }
 
@@ -49,17 +48,12 @@ export function ChoiceControl({
     <PropertyField label={label} htmlFor={id}>
       <InspectorSelect
         id={id}
+        label={label}
         value={value}
         disabled={disabled}
-        onChange={(e) => onChange(e.target.value)}
-      >
-        {!known && <option value={value}>{value || '当前值'}</option>}
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </InspectorSelect>
+        options={options}
+        onChange={onChange}
+      />
     </PropertyField>
   );
 }

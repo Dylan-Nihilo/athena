@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AlignCenter, AlignJustify, AlignLeft, AlignRight, Blend, Frame, Type } from 'lucide-react';
 import {
+  BorderStyleSample,
   ChoiceControl,
   ColorControl,
   InsetsControl,
@@ -220,6 +221,7 @@ const ChoicePicker = createComponentImplementation(
             value,
             label: choiceLabels[value] || value,
             icon: Icon && <Icon size={15} aria-hidden />,
+            preview: props.property === 'border-style' && <BorderStyleSample value={value} />,
           };
         })}
         onChange={(value) => {

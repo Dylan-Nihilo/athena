@@ -1205,10 +1205,10 @@ select {
 .element-search .ei-select {
   flex: 0 0 58px;
 }
-.element-search .ei-select select {
+.element-search .ei-select-trigger {
   font-size: 11px;
   padding-left: 3px;
-  padding-right: 15px;
+  padding-right: 3px;
   height: 28px;
   min-height: 28px;
   background: none;
@@ -1407,7 +1407,8 @@ select {
   grid-column: 1/-1;
 }
 .style-fields label > span,
-.motion-fields label > span {
+.motion-fields label > span,
+.motion-fields .ei-label {
   display: block;
   font-size: 11px;
   color: var(--muted);

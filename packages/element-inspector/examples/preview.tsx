@@ -11,7 +11,14 @@ import {
   ScanLine,
   Type,
 } from 'lucide-react';
-import { ChoiceControl, ColorControl, InsetsControl, NumberControl, PropertySection } from '../src';
+import {
+  BorderStyleSample,
+  ChoiceControl,
+  ColorControl,
+  InsetsControl,
+  NumberControl,
+  PropertySection,
+} from '../src';
 import './preview.css';
 
 const initial = {
@@ -127,7 +134,10 @@ function Preview() {
                 { value: 'dashed', label: '虚线' },
                 { value: 'dotted', label: '点线' },
                 { value: 'none', label: '无' },
-              ]}
+              ].map((option) => ({
+                ...option,
+                preview: <BorderStyleSample value={option.value} />,
+              }))}
               onChange={(v) => update('borderStyle', v)}
             />
           </PropertySection>

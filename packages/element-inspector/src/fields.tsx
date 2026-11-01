@@ -1,4 +1,3 @@
-import { ChevronDown } from 'lucide-react';
 import { useId, type ComponentProps, type ReactNode } from 'react';
 
 export function PropertySection({
@@ -57,14 +56,5 @@ export function InspectorInput(props: ComponentProps<'input'>) {
 export function InspectorTextarea(props: ComponentProps<'textarea'>) {
   return (
     <textarea {...props} className={['ei-textarea', props.className].filter(Boolean).join(' ')} />
-  );
-}
-
-export function InspectorSelect({ children, ...props }: ComponentProps<'select'>) {
-  return (
-    <span className="ei-select">
-      <select {...props}>{children}</select>
-      <ChevronDown size={13} aria-hidden />
-    </span>
   );
 }
