@@ -2,6 +2,8 @@
 
 更新日期：2026-11-01。本文件供 Athena 项目中的后续聊天接续工作；完整技术依据见 [Computer Use 调研报告](computer-use-research.md)。
 
+最新整合版本为 **0.6.1**，本机构建 `release/v0.6.1/mac-arm64/Athena.app`。该版本合入 `codex/element-inspector-kit` 的专用控件，包含此前主工作区的浏览器与 Agent 修复，并修正选择器裁切/图标重叠及共享详情加载时序；近期变化见 [更新日志](../CHANGELOG.md)。其他独立功能 worktree 不因本次同步自动合入。
+
 最新浏览器预览修复：[v7 面板像素捕获](v7-capture-size.md)。独立包为 `release/logo-v7-capture-fix/mac-arm64/Athena.app`，已按实际面板物理像素捕获并验证滚动位置帧率、末次滚轮事件后拖尾及坐标回归；不是桌面 Computer Use 的实现。
 
 后续交互版本：[交互体验修正](interaction-refinement.md)，独立包 `release/interaction-refinement/mac-arm64/Athena.app`。包含上述 v7 捕获修复，并增加统一选择菜单、推理滑块、Codex 预热复用、人工操作不中断整轮任务和 USD API 等价估算。

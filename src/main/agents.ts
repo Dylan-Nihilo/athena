@@ -769,7 +769,7 @@ export class CodexSession {
         }
       });
       await this.request('initialize', {
-        clientInfo: { name: 'agent_workbench', title: 'Athena', version: '0.6.0' },
+        clientInfo: { name: 'agent_workbench', title: 'Athena', version: '0.6.1' },
         capabilities: { experimentalApi: true },
       });
       checkCurrent();

@@ -188,8 +188,59 @@ try {
   await expect
     .poll(() => evaluate('document.querySelector("#title").textContent'))
     .toBe('Alice 与 Bob 的共同计划');
+  // A state/control update can arrive before its image. Hold frames to exercise
+  // automatic inspector reads with a valid ref but an obsolete display epoch.
+  await guest.evaluate(() => {
+    const socket = (window as any).__testSocket;
+    const receive = socket.onmessage;
+    const send = socket.send.bind(socket);
+    const details = new Set<number>();
+    const held: MessageEvent[] = [];
+    const probe = ((window as any).__inspectorFrameGate = { staleReads: 0, held: true });
+    socket.send = (data: string) => {
+      const message = JSON.parse(data);
+      if (message.type === 'command' && message.action === 'browser:element-details')
+        details.add(message.id);
+      return send(data);
+    };
+    socket.onmessage = function (event: MessageEvent) {
+      const message = JSON.parse(event.data);
+      if (message.type === 'frame' && probe.held) {
+        held.push(event);
+        return;
+      }
+      if (
+        message.type === 'result' &&
+        details.has(message.id) &&
+        message.error === '画面已过期，请等待新画面后重试'
+      )
+        probe.staleReads++;
+      return receive.call(this, event);
+    };
+    (window as any).__releaseInspectorFrames = () => {
+      probe.held = false;
+      socket.onmessage = receive;
+      socket.send = send;
+      for (const event of held.splice(0)) receive.call(socket, event);
+    };
+  });
+  const inspectorViewport = (await invoke('app:snapshot')).browser.viewport;
+  await invoke('browser:resize', {
+    width: inspectorViewport.width,
+    height: inspectorViewport.height - 10,
+  });
+  await invoke('browser:resize', {
+    width: inspectorViewport.width,
+    height: inspectorViewport.height,
+  });
   await invoke('share:control', { id: guestId });
   await expect(guest.getByText('你正在操作', { exact: true })).toBeVisible();
+  await expect
+    .poll(() => guest.evaluate(() => (window as any).__inspectorFrameGate.staleReads))
+    .toBe(1);
+  await guest.evaluate(() => (window as any).__releaseInspectorFrames());
+  await expect(guest.locator('.shared-frame-loading')).toHaveCount(0);
+  await expect(guest.getByRole('tab', { name: '内容', exact: true })).toBeVisible();
   await guest.setViewportSize({ width: 760, height: 620 });
   await clickNative('#entry');
   await guest.keyboard.press('Meta+A');
@@ -448,6 +499,10 @@ try {
           { width: 1200, height: 800 },
           { width: 760, height: 620 },
         ],
+        inspectorFrameRecovery: {
+          staleReads: await guest.evaluate(() => (window as any).__inspectorFrameGate.staleReads),
+          recoveredWithoutReselecting: true,
+        },
         steps: recording.steps,
         errors,
       },

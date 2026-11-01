@@ -12,6 +12,7 @@ export class ShareConnection {
     }
   >();
   private nextId = 0;
+  private frameReaders = new Set<() => void>();
   private stopped = false;
   private retry?: ReturnType<typeof setTimeout>;
   private attempts = 0;
@@ -51,6 +52,7 @@ export class ShareConnection {
       if (message.type === 'state') {
         this.state = message.state;
         if (message.browser) this.browser = message.browser;
+        for (const check of this.frameReaders) check();
       }
       if (message.type === 'result') {
         const pending = this.pending.get(message.id);
@@ -93,8 +95,59 @@ export class ShareConnection {
     if (this.socket?.readyState !== WebSocket.OPEN) return;
     this.frame = frame;
     this.socket.send(JSON.stringify({ type: 'ack', sequence: frame.sequence, epoch: frame.epoch }));
+    for (const check of this.frameReaders) check();
   }
-  invoke<T = unknown>(action: string, payload?: unknown): Promise<T> {
+  async invoke<T = unknown>(action: string, payload?: unknown): Promise<T> {
+    const frame = this.frame,
+      generation = this.state?.generation;
+    try {
+      return await this.request<T>(action, payload);
+    } catch (error) {
+      // Only refresh an automatically loaded read; edits and input are never replayed.
+      if (
+        action !== 'browser:element-details' ||
+        !(error instanceof Error) ||
+        error.message !== '画面已过期，请等待新画面后重试'
+      )
+        throw error;
+      await this.waitForFrame(frame, generation);
+      return this.request<T>(action, payload);
+    }
+  }
+  private waitForFrame(
+    previous: BrowserFrame | undefined,
+    generation: number | undefined,
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const finish = (error?: Error) => {
+        clearTimeout(timer);
+        this.frameReaders.delete(check);
+        error ? reject(error) : resolve();
+      };
+      const check = () => {
+        if (this.stopped || this.socket?.readyState !== WebSocket.OPEN)
+          return finish(new Error('连接已中断，请重新选取元素'));
+        if (this.state?.generation !== generation)
+          return finish(new Error('控制权已变化，请重新选取元素'));
+        const frame = this.frame,
+          viewport = this.browser?.viewport;
+        if (
+          frame &&
+          frame.sequence !== previous?.sequence &&
+          !this.browser?.loading &&
+          (!viewport ||
+            (frame.epoch === viewport.epoch &&
+              frame.width === viewport.width &&
+              frame.height === viewport.height))
+        )
+          finish();
+      };
+      const timer = setTimeout(() => finish(new Error('页面尚未同步，请重新选取元素')), 15_000);
+      this.frameReaders.add(check);
+      check();
+    });
+  }
+  private request<T = unknown>(action: string, payload?: unknown): Promise<T> {
     const socket = this.socket;
     if (this.stopped || socket?.readyState !== WebSocket.OPEN)
       return Promise.reject(new Error('尚未连接，请等待重连'));
@@ -125,6 +178,7 @@ export class ShareConnection {
       p.reject(new Error(message));
     }
     this.pending.clear();
+    for (const check of this.frameReaders) check();
   }
   close(): void {
     this.stopped = true;

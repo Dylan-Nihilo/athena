@@ -5,6 +5,8 @@
 .choice-select .choice-select-trigger {
   min-height: 34px;
   width: 100%;
+  align-items: center;
+  padding-block: 0;
   border: 1px solid var(--border);
   border-radius: 9px;
   background: var(--surface);
@@ -14,11 +16,15 @@
   line-height: 1.4;
 }
 .choice-select [data-slot='select-value'] {
+  min-width: 0;
+  font-size: inherit;
+  line-height: inherit;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .choice-select-popover {
+  min-width: max(120px, var(--trigger-width));
   max-width: min(420px, calc(100vw - 24px));
   max-height: min(320px, var(--available-height));
   border: 1px solid var(--border);
@@ -34,6 +40,7 @@
 .choice-select-popover [role='option'] {
   min-height: 32px;
   padding: 7px 10px;
+  padding-inline-end: 30px;
   gap: 12px;
   font-size: 12px;
   border-radius: 7px;

@@ -35,7 +35,7 @@
 
 独立包的显示名称是 **Athena**，版本仍为 **0.6.0**，路径为：
 
-`/Users/dylanthomas/Desktop/projects/athena/release/neo-performance/mac-arm64/Athena.app`
+`release/neo-performance/mac-arm64/Athena.app`
 
 只读进程核对时，仍在运行的是 PID 96889 的旧 `release/agent-experience/mac-arm64/Athena.app`。**当前旧应用没有自动更新，需用户退出旧 Athena，再手动打开上面的 neo-performance 包，才能体验本次输入修复。** 两个包名称、版本号和兼容 bundle ID 相同，应按完整路径区分，避免从旧 Dock 入口重新打开旧包。
 
