@@ -1,6 +1,10 @@
 # Computer Use 上下文交接
 
-更新日期：2026-10-30。本文件供 Athena 项目中的后续聊天接续工作；完整技术依据见 [Computer Use 调研报告](computer-use-research.md)。
+更新日期：2026-11-01。本文件供 Athena 项目中的后续聊天接续工作；完整技术依据见 [Computer Use 调研报告](computer-use-research.md)。
+
+最新浏览器预览修复：[v7 面板像素捕获](v7-capture-size.md)。独立包为 `release/logo-v7-capture-fix/mac-arm64/Athena.app`，已按实际面板物理像素捕获并验证滚动位置帧率、末次滚轮事件后拖尾及坐标回归；不是桌面 Computer Use 的实现。
+
+后续交互版本：[交互体验修正](interaction-refinement.md)，独立包 `release/interaction-refinement/mac-arm64/Athena.app`。包含上述 v7 捕获修复，并增加统一选择菜单、推理滑块、Codex 预热复用、人工操作不中断整轮任务和 USD API 等价估算。
 
 ## 已确认的需求与当前阶段
 
@@ -72,3 +76,31 @@ Cua 官方提供 TypeScript 与 Electron 嵌入路径，原生 helper 需要放�
 5. 再扩展到 Excel 测试表格、飞书草稿和隔离环境；创建与借用资源分开，默认不挂载个人目录或继承全部账号。
 
 验收必须来自实际应用状态或文件内容。已有浏览器测试、上游演示及模型的“已完成”消息，都不能代替 Athena 桌面 POC 的成功证据。独立 API 认证、模型费用、VM 费用与真实任务成功率仍需后续实测。
+
+
+## 2026-10-31：多人共享浏览器页面（任务 1）
+
+0.4.0 的 Share 实现已加入当前工作树，详见 [共享工作区页面](shared-workspace.md)。共享的是当前权威 BrowserOS 标签页；B 的独立浏览器接收同一捕获流并通过页面白名单操作。没有实现或验证 Mac 桌面远控。A 的明确加入确认、参与者凭据、控制权代次、画面/文档代次、预览作者和断线取消共同限制输入范围；Agent 在共享期间不接管页面。
+
+入口：`src/main/sharing.ts`（HTTPS/WSS 会话与权限），`src/main/browser-actions.ts`（共享与原 IPC 复用的页面命令），`src/renderer/SharePanel.tsx` / `SharedPage.tsx`（双方界面）。BrowserRuntime 仍是唯一页面所有者；保持 0.3.2 滚动合并和全部兼容标识。新增记录的参与者字段和共享分段字段均可选，不迁移旧数据或钥匙串。
+
+独立的 0.4.0 应用已通过 loopback 和局域网接口的双进程客户端验收：共享滚动约 58fps，慢客户端不阻塞主持人；未共享时的 0.3.2 宽页滚动回归也通过。开发态 Electron 曾等待系统入站确认，独立包实测可达；本次未改防火墙规则。物理另一台设备、VPN 和公网链路未验证，未部署外部中继。源码未提交/推送，构建仅在 `release/sharing/mac-arm64/Athena.app`。任务 1 正式完成和下一项启动以 `.runtime/feature-goals-20261031/state.json`、最终交接和 goal 状态为准。
+
+## 2026-10-31：复杂 Agent 网页任务（任务 2）
+
+0.5.0 继续复用 CodexSession 与 Neo 原生 act/run/read/wait。`src/main/web-execution.ts` 提供公开计划、原文证据检查点和任务内恢复屏障；`neo-browser.ts` 串行校验/派发，拒绝未知结果重放并记录下载文件证据。`agents.ts` 拒绝重复 callId，接收公开 plan 通知并记录工具耗时。主进程持久化 `ChatMessage.plan/execution`，未核对的结果不能以成功完成；重启不自动重放。
+
+真实 CLI 的正常和回执异常多步骤工作流已完成本地页面、服务端唯一订单与 CSV 文件回读。原生测试另覆盖旧引用、条件等待失败、人工帮助、接管取消、晚到确认和有界脚本。详细证据与复现见 [复杂网页任务执行](complex-web-tasks.md) 和 `test-results/complex-agent/verification.json`。模型选择、usage、费用与新增交互面板仍由任务 3 处理。
+
+共享期间先停止共享才能启动 Agent；任务 1 的参与者、控制权、帧/页面代次、预览作者和清理边界保留。下载默认目录属于 Athena 自有浏览器 profile，原有共享下载 deny 继续生效。没有外部站点、真实登录/验证码、支付或桌面控制验收，没有提交、推送或公网部署。独立构建在 `release/complex-agent/mac-arm64/Athena.app`，不替换 `release/sharing` 或既有预览。正式完成状态仍以队列 state.json、最终交接和 goal 状态为准。
+
+
+## 2026-11-01：Agent 交互、模型选择与用量（任务 3）
+
+0.6.0 已完成公开计划/动作/证据/人工处理/产物面板、真实 CLI 模型选择与独立用量页，详见 [Agent 交互与用量](agent-experience.md)。模型目录取自 model/list；turn/start 传递真实选项，按本线程、本轮 turn_context 核对实际配置，处理 model/rerouted，不把上一轮或模型自述当作当前执行证明。已结束轮次在读取模型记录期间也拒绝晚到工具和审批；用量事件仍按原 thread/turn 归档。
+
+usage.json 是独立本机账本，使用真实累计基线和最新快照更新，重复事件不相加；继续会话、错误、取消和重启均已验。输入/输出/缓存读取/缓存写入缺失时保留未知或部分数据；旧任务没有可信记录时不估造。日期按任务开始日和本机时区分组。费用不可得，不使用 API 估算冒充订阅账单；当前仍仅接通 Codex。
+
+全量单元测试 165 通过、13 环境跳过，最终原生专项 23 通过；CLI 3 轮与独立应用 4 轮真实模型验收、重启、键盘、减少动态效果、窄窗口、产物宿主验证和共享拒绝均通过。既有 fit-width 帧等待曾间歇超时，最终整套重跑通过；未改浏览器实现或原断言，原因未证实，原失败日志保留。错误提示的 HeroUI 类名冲突已通过受控事件复现并修复。
+
+独立构建 `release/agent-experience/mac-arm64/Athena.app`，ad-hoc 深度签名校验通过，未公证。0.3.2/0.4.0/0.5.0 未提交成果、原构建、旧滚动预览和无关品牌图片均保留；没有提交、推送或公网部署。证据为 `test-results/agent-experience/verification.json`。桌面控制、外部登录/验证码/支付/OAuth 弹窗仍未验证。任务 3 是队列最后一项；不得据本交接创建第 4 项。

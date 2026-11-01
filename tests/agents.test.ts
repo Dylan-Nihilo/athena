@@ -13,6 +13,7 @@ async function fixture(
     waitForLogin?: boolean;
     loginMessage?: string;
     toolAggregatedOutput?: string;
+    modelProtocol?: boolean;
   } = {},
 ) {
   const directory = await mkdtemp(path.join(tmpdir(), 'workbench-agent-test-'));
@@ -41,6 +42,12 @@ readline.createInterface({input:process.stdin}).on('line', line => {
   const request = JSON.parse(line); fs.appendFileSync(log, line+'\\n');
   const p = request.params || {};
   if (request.method === 'initialize') return setTimeout(()=>send({id:request.id,result:{userAgent:'fake-codex'}}),options.initializeDelayMs||0);
+  if (request.method === 'model/list') return send({id:request.id,result:{data:[
+    {id:'catalog-a',model:'model-a',displayName:'Model A',isDefault:true,supportedReasoningEfforts:[{reasoningEffort:'low',description:'Quick'}],defaultReasoningEffort:'low'},
+    {id:'hidden',model:'hidden',hidden:true},
+    ...(p.cursor ? [{id:'catalog-b',model:'model-b',displayName:'Model B',supportedReasoningEfforts:[],defaultReasoningEffort:'low'}] : [])
+  ],nextCursor:p.cursor ? null : 'page-2'}});
+  if (request.method === 'thread/start' && options.modelProtocol) return send({id:request.id,result:{thread:{id:'thread-1'},model:p.model,reasoningEffort:p.config?.model_reasoning_effort}});
   if (request.method === 'thread/start') return setTimeout(()=>send({id:request.id,result:{thread:{id:'thread-1'}}}),options.threadStartDelayMs||0);
   if (request.method === 'thread/resume') return p.threadId==='thread-1' ? send({id:request.id,result:{thread:{id:'thread-1'}}}) : send({id:request.id,error:{code:-32602,message:'Thread not found'}});
   if (request.method === 'turn/start') {
@@ -52,7 +59,25 @@ readline.createInterface({input:process.stdin}).on('line', line => {
     }
     send({id:request.id,result:{turn:{id:current,status:'inProgress'}}});
     event('turn/started',{threadId:'thread-1',turn:{id:current,status:'inProgress'}});
+    if(mode==='tool-after-completion') {
+      finish();
+      return send({id:101,method:'item/tool/call',params:{threadId:'thread-1',turnId:current,callId:'too-late',tool:'browser_snapshot',arguments:{}}});
+    }
+    if(mode==='usage') {
+      const count={inputTokens:100,outputTokens:10,totalTokens:110,cachedInputTokens:0,cacheWriteInputTokens:0,reasoningOutputTokens:0};
+      event('thread/tokenUsage/updated',{threadId:'foreign',turnId:current,tokenUsage:{total:count,last:count}});
+      event('thread/tokenUsage/updated',{threadId:'thread-1',turnId:'unknown',tokenUsage:{total:count,last:count}});
+      event('thread/tokenUsage/updated',{threadId:'thread-1',turnId:current,tokenUsage:{total:count,last:count}});
+      event('model/rerouted',{threadId:'thread-1',turnId:current,fromModel:p.model,toModel:'fallback',reason:'unknown'});
+      return finish();
+    }
     if(mode==='fail') return finish('failed',{message:'model unavailable'});
+    if(mode==='plan') {
+      event('turn/plan/updated',{threadId:'another-thread',turnId:current,plan:[{step:'foreign',status:'completed'}]});
+      event('turn/plan/updated',{threadId:'thread-1',turnId:'old-turn',plan:[{step:'old',status:'completed'}]});
+      event('turn/plan/updated',{threadId:'thread-1',turnId:current,plan:[{step:'invalid',status:'invented'}]});
+      event('turn/plan/updated',{threadId:'thread-1',turnId:current,explanation:'not public reasoning',plan:[{step:'Read receipt',status:'inProgress',privateField:'do not forward'}]});
+    }
     if(mode==='fatal-error') return event('error',{threadId:'thread-1',turnId:current,error:{message:'connection lost'},willRetry:false});
     if(mode==='exit') return process.exit(7);
     if(mode==='cancel'||mode==='cancel-ack-only') { event('item/agentMessage/delta',{threadId:'thread-1',turnId:current,itemId:'cancel-wait',delta:'Waiting for cancellation'}); return; }
@@ -91,6 +116,10 @@ readline.createInterface({input:process.stdin}).on('line', line => {
       const args={ref:'fixture-button',styles:{'background-image':'linear-gradient(90deg, black, white)'}};
       event('item/started',{threadId:'thread-1',turnId:current,item:{id:'tool-1',type:'dynamicToolCall',tool:'workbench_browser_edit',arguments:args,status:'inProgress'}});
       return send({id:101,method:'item/tool/call',params:{threadId:'thread-1',turnId:current,callId:'tool-1',tool:'workbench_browser_edit',arguments:args}});
+    }
+    if(mode==='duplicate-tool') {
+      for(const id of [101,102]) send({id,method:'item/tool/call',params:{threadId:'thread-1',turnId:current,callId:'same-action',tool:'browser_snapshot',arguments:{}}});
+      return;
     }
     if(mode==='tool'||mode==='unknown'||mode==='pending-tool'||mode==='foreign-tool') {
       pendingTool=mode==='pending-tool';
@@ -172,6 +201,63 @@ function session(
     ...overrides,
   });
 }
+
+test('preparing a session initializes once without a model turn and is reused by later sends', async (t) => {
+  const f = await fixture({ initializeDelayMs: 30, threadStartDelayMs: 30 });
+  const events: AgentEvent[] = [];
+  const agent = session(f, events);
+  t.after(() => {
+    agent.close();
+    return f.cleanup();
+  });
+  await Promise.all([agent.prepare(), agent.prepare(), agent.listModels()]);
+  const prepared = await f.requests();
+  assert.equal(prepared.filter((r) => r.method === 'initialize').length, 1);
+  assert.equal(prepared.filter((r) => r.method === 'thread/start').length, 1);
+  assert.equal(prepared.filter((r) => r.method === 'turn/start').length, 0);
+  assert.equal(agent.sessionId, 'thread-1');
+  await agent.send('hello');
+  await agent.send('hello again');
+  const sent = await f.requests();
+  assert.equal(sent.filter((r) => r.method === 'initialize').length, 1);
+  assert.equal(sent.filter((r) => r.method === 'thread/start').length, 1);
+  assert.equal(sent.filter((r) => r.method === 'turn/start').length, 2);
+  assert(!events.some((e) => e.type === 'status' && e.label === '连接本机 Codex'));
+});
+
+test('closing a prewarm rejects its handshake and cannot create a late thread', async (t) => {
+  const f = await fixture({ initializeDelayMs: 1000 });
+  const agent = session(f, []);
+  t.after(() => {
+    agent.close();
+    return f.cleanup();
+  });
+  const warming = assert.rejects(agent.prepare(), /关闭/);
+  await waitFor(async () => (await f.requests()).some((r) => r.method === 'initialize'));
+  agent.close();
+  await warming;
+  assert.equal(
+    (await f.requests()).some((r) => r.method === 'thread/start'),
+    false,
+  );
+});
+
+test('a model change during prewarm uses the new turn selection without reconnecting', async (t) => {
+  const f = await fixture({ threadStartDelayMs: 80, modelProtocol: true });
+  const agent = session(f, []);
+  t.after(() => {
+    agent.close();
+    return f.cleanup();
+  });
+  const ready = agent.prepare({ model: 'model-a', effort: 'low' });
+  await waitFor(async () => (await f.requests()).some((r) => r.method === 'thread/start'));
+  const turn = agent.send('hello', undefined, undefined, { model: 'model-b' });
+  await Promise.all([ready, turn]);
+  const requests = await f.requests();
+  assert.equal(requests.filter((r) => r.method === 'initialize').length, 1);
+  assert.equal(requests.find((r) => r.method === 'thread/start').params.model, 'model-a');
+  assert.equal(requests.find((r) => r.method === 'turn/start').params.model, 'model-b');
+});
 
 test('structured streaming uses existing CLI and restrictive per-process configuration', async (t) => {
   const f = await fixture();
@@ -1182,4 +1268,117 @@ test('a zero-exit not-logged-in response is not misreported as authenticated', a
     else process.env.PATH = oldPath;
     await f.cleanup();
   }
+});
+
+test('public plans reject foreign turns and malformed statuses, without forwarding hidden fields', async (t) => {
+  const f = await fixture();
+  const events: AgentEvent[] = [];
+  const agent = session(f, events);
+  t.after(async () => {
+    await agent.close();
+    await f.cleanup();
+  });
+  await agent.send('plan');
+  const plans = events.filter((e) => e.type === 'plan');
+  assert.equal(plans.length, 1);
+  assert.deepEqual(plans[0].steps, [{ step: 'Read receipt', status: 'inProgress' }]);
+  assert(plans[0].at > 0);
+});
+
+test('duplicate dynamic call ids are never dispatched twice while the first result is unknown', async (t) => {
+  const f = await fixture();
+  const events: AgentEvent[] = [];
+  let dispatches = 0;
+  const agent = session(f, events, async () => {
+    dispatches++;
+    await new Promise((r) => setTimeout(r, 40));
+    return { text: 'one action committed' };
+  });
+  t.after(async () => {
+    await agent.close();
+    await f.cleanup();
+  });
+  await agent.send('duplicate-tool');
+  assert.equal(dispatches, 1);
+  const responses = await f.requests();
+  assert.equal(responses.find((x) => x.id === 102)?.result?.success, false);
+  const call = events.filter((e) => e.type === 'tool' && e.call.status === 'done').at(-1);
+  assert(
+    call?.type === 'tool' &&
+      call.call.durationMs! >= 35 &&
+      call.call.finishedAt! >= call.call.startedAt!,
+  );
+});
+
+test('model discovery is paginated and does not create a thread; turn overrides persist across calls', async (t) => {
+  const f = await fixture({ modelProtocol: true });
+  const events: AgentEvent[] = [];
+  const agent = session(f, events);
+  t.after(() => {
+    agent.close();
+    return f.cleanup();
+  });
+  const models = await agent.listModels();
+  assert.deepEqual(
+    models.map((m) => m.model),
+    ['model-a', 'model-b'],
+  );
+  assert.equal(models[1].defaultEffort, undefined);
+  assert(!(await f.requests()).some((r) => r.method === 'thread/start'));
+  await agent.send('hello', undefined, undefined, { model: 'model-a', effort: 'low' });
+  await agent.send('hello', undefined, undefined, { model: 'model-b' });
+  const requests = await f.requests();
+  assert.deepEqual(
+    requests.filter((r) => r.method === 'turn/start').map((r) => [r.params.model, r.params.effort]),
+    [
+      ['model-a', 'low'],
+      ['model-b', null],
+    ],
+  );
+  assert(
+    !requests.some((r) => r.method === 'thread/resume'),
+    'loaded resume cannot be used as a model change',
+  );
+  const starts = events.filter((e) => e.type === 'run-started');
+  assert.equal(starts[0].model.model, 'model-a');
+  assert.equal(starts[1].model.source, 'unconfirmed');
+  assert.equal(starts[1].model.requested, 'model-b');
+  assert.equal(starts[1].model.model, undefined, 'requested model is not evidence of execution');
+});
+
+test('usage and model reroutes are scoped to owned turns without reasoning payloads', async (t) => {
+  const f = await fixture({ modelProtocol: true });
+  const events: AgentEvent[] = [];
+  const agent = session(f, events);
+  t.after(() => {
+    agent.close();
+    return f.cleanup();
+  });
+  await agent.send('usage', undefined, undefined, { model: 'model-a', effort: 'low' });
+  const usage = events.filter((e) => e.type === 'usage');
+  assert.equal(usage.length, 1);
+  assert.equal(usage[0].total.inputTokens, 100);
+  assert.equal(usage[0].total.cacheWriteInputTokens, 0);
+  const reroute = events.find((e) => e.type === 'model');
+  assert.equal(reroute?.model.source, 'rerouted');
+  assert.equal(reroute?.model.model, 'fallback');
+});
+
+test('terminal turns refuse late tools while execution-model confirmation is pending', async (t) => {
+  const f = await fixture();
+  const events: AgentEvent[] = [];
+  let hostCalls = 0;
+  const agent = session(f, events, async () => {
+    hostCalls++;
+    return { text: 'must not run' };
+  });
+  t.after(() => {
+    agent.close();
+    return f.cleanup();
+  });
+  await agent.send('tool-after-completion');
+  await waitFor(async () => (await f.requests()).some((r) => r.id === 101 && r.result));
+  assert.equal(hostCalls, 0);
+  assert.equal((await f.requests()).find((r) => r.id === 101 && r.result).result.success, false);
+  assert.equal(events.filter((event) => event.type === 'complete').length, 1);
 });

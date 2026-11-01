@@ -1,5 +1,6 @@
 import { Input, Tabs } from '@heroui/react';
-import { Segment, NativeSelect } from '@heroui-pro/react';
+import { Segment } from '@heroui-pro/react';
+import { ChoiceSelect } from './ChoiceSelect';
 import { ActionButton } from './ui';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -29,6 +30,9 @@ import type {
   Recording,
 } from '../shared/types';
 import { NeoHistory } from './NeoHistory';
+import { SharePanel } from './SharePanel';
+import type { ShareState } from '../shared/share';
+import './sharing.css';
 
 interface Props {
   state: BrowserState;
@@ -73,6 +77,27 @@ export function BrowserPane({
   neo,
   nativeRecordId,
 }: Props) {
+  const [share, setShare] = useState<ShareState>();
+  const shareRef = useRef<ShareState | undefined>(undefined);
+  useEffect(() => {
+    let disposed = false;
+    void window.workbench.invoke<ShareState>('share:state').then((s) => {
+      if (!disposed) {
+        shareRef.current = s;
+        setShare(s);
+      }
+    });
+    const unsubscribe = window.workbench.onEvent((e) => {
+      if (e.type === 'share:state') {
+        shareRef.current = e.state;
+        setShare(e.state);
+      }
+    });
+    return () => {
+      disposed = true;
+      unsubscribe();
+    };
+  }, []);
   const [url, setUrl] = useState(state.url);
   const [mode, setMode] = useState<'page' | 'recordings' | 'neo'>('page');
   const [recordingId, setRecordingId] = useState<string>();
@@ -87,6 +112,10 @@ export function BrowserPane({
   const zoomMode = zoomModes[state.activeTabId ?? ''] ?? 'fit';
   const image = useRef<HTMLImageElement>(null);
   const lastFrame = useRef(initialFrame?.data || '');
+  const receivedEpoch = useRef(initialFrame?.epoch);
+  const decodedEpoch = useRef<number | undefined>(undefined);
+  const expectedEpoch = useRef(state.viewport?.epoch);
+  expectedEpoch.current = state.viewport?.epoch;
   const activeTab = useRef(state.activeTabId);
   const surface = useRef<HTMLDivElement>(null);
   const keyboard = useRef<HTMLTextAreaElement>(null);
@@ -97,11 +126,19 @@ export function BrowserPane({
   });
   const decodedViewport = useRef<BrowserViewport | undefined>(undefined);
   const expectedViewport = useRef<
-    (BrowserViewport & { surfaceWidth: number; surfaceHeight: number }) | undefined
+    | (BrowserViewport & {
+        surfaceWidth: number;
+        surfaceHeight: number;
+        epoch?: number;
+        zoomMode: 'fit' | 'actual';
+      })
+    | undefined
   >(undefined);
   const resizeRequest = useRef(0);
   const composing = useRef(false);
   const compositionTab = useRef<string | undefined>(undefined);
+  const compositionEpoch = useRef<number | undefined>(undefined);
+  const compositionGeneration = useRef<number | undefined>(undefined);
   const compositionCommit = useRef<{ value: string; time: number } | undefined>(undefined);
   const pointerFrame = useRef<number>(0);
   const inspectActive = useRef(false);
@@ -115,6 +152,7 @@ export function BrowserPane({
     return Boolean(
       bounds &&
       expected &&
+      (expectedEpoch.current === undefined || decodedEpoch.current === expectedEpoch.current) &&
       bitmap?.naturalWidth &&
       Math.abs(
         bitmap.naturalWidth -
@@ -131,9 +169,18 @@ export function BrowserPane({
     );
   };
   const sendInput = (input: BrowserInput) => {
+    if (
+      shareRef.current?.active &&
+      (shareRef.current.controllerId !== 'host' || shareRef.current.changingControl)
+    )
+      return;
     if (ready && !frameLoading && !viewportPending && alignedViewport())
       void window.workbench
-        .invoke('browser:input', { ...input, tabId: input.tabId ?? activeTab.current })
+        .invoke('browser:input', {
+          ...input,
+          tabId: input.tabId ?? activeTab.current,
+          frameEpoch: decodedEpoch.current,
+        })
         .catch(() => {});
   };
 
@@ -180,7 +227,16 @@ export function BrowserPane({
   useEffect(
     () =>
       window.workbench.onEvent((event) => {
-        if (event.type === 'browser:state') inspectActive.current = event.state.inspecting;
+        if (event.type === 'browser:state') {
+          inspectActive.current = event.state.inspecting;
+          expectedEpoch.current = event.state.viewport?.epoch;
+          // A new document must finish its fit check before accepting input,
+          // even if its first bitmap happens to have the previous dimensions.
+          if (event.state.loading && expectedViewport.current?.epoch !== expectedEpoch.current)
+            expectedViewport.current = undefined;
+          if (expectedEpoch.current !== undefined && decodedEpoch.current !== expectedEpoch.current)
+            setViewportPending(true);
+        }
         if (event.type === 'browser:state' && event.state.activeTabId !== activeTab.current) {
           activeTab.current = event.state.activeTabId;
           lastFrame.current = '';
@@ -197,6 +253,7 @@ export function BrowserPane({
             setFrameLoading(true);
             return;
           }
+          receivedEpoch.current = event.frame.epoch;
           viewport.current = { width: event.frame.width, height: event.frame.height };
           lastFrame.current = event.frame.data.startsWith('data:')
             ? event.frame.data
@@ -207,15 +264,33 @@ export function BrowserPane({
     [],
   );
   useEffect(() => {
-    expectedViewport.current = undefined;
-    setViewportPending(true);
-    if (!surface.current || mode !== 'page' || !ready || state.loading) return;
-    let timer: ReturnType<typeof setTimeout>;
-    const observer = new ResizeObserver((entries) => {
-      clearTimeout(timer);
-      const bounds = entries[0].contentRect;
+    if (!surface.current || mode !== 'page' || !ready) {
       expectedViewport.current = undefined;
       setViewportPending(true);
+      return;
+    }
+    // Same-document URL updates can briefly report loading (e.g. a live search).
+    // Keep the displayed geometry: once loading ends it is usable immediately
+    // if the document epoch and surface still match. Real navigations fail that check.
+    if (expectedViewport.current?.zoomMode !== zoomMode) expectedViewport.current = undefined;
+    setViewportPending(state.loading || !alignedViewport());
+    if (state.loading) return;
+    let timer: ReturnType<typeof setTimeout>;
+    const resize = (bounds: DOMRectReadOnly) => {
+      clearTimeout(timer);
+      const expected = expectedViewport.current;
+      if (
+        !expected ||
+        expected.tabId !== state.activeTabId ||
+        Math.abs(expected.surfaceWidth - Math.floor(bounds.width)) > 1 ||
+        Math.abs(expected.surfaceHeight - Math.floor(bounds.height)) > 1 ||
+        // A fitted wide page may need a temporary layout probe at the pane width.
+        // Keep input blocked until that probe has finished.
+        (zoomMode === 'fit' && Math.abs(expected.width - Math.floor(bounds.width)) > 1)
+      ) {
+        expectedViewport.current = undefined;
+        setViewportPending(true);
+      }
       setViewportError(false);
       const current = ++resizeRequest.current;
       const tabId = state.activeTabId;
@@ -225,6 +300,7 @@ export function BrowserPane({
             .invoke<BrowserViewport>('browser:resize', {
               width: Math.floor(bounds.width),
               height: Math.floor(bounds.height),
+              pixelRatio: window.devicePixelRatio,
               fitToWidth: zoomMode === 'fit',
               tabId,
             })
@@ -238,6 +314,8 @@ export function BrowserPane({
                 return;
               expectedViewport.current = {
                 ...value,
+                epoch: expectedEpoch.current,
+                zoomMode,
                 surfaceWidth: Math.floor(bounds.width),
                 surfaceHeight: Math.floor(bounds.height),
               };
@@ -250,10 +328,21 @@ export function BrowserPane({
                 setViewportError(true);
             });
       }, 120);
-    });
+    };
+    const observer = new ResizeObserver((entries) => resize(entries[0].contentRect));
+    // Moving between screens can change physical pixels without changing CSS geometry.
+    let density = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+    const densityChanged = () => {
+      density.removeEventListener('change', densityChanged);
+      density = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+      density.addEventListener('change', densityChanged);
+      if (surface.current) resize(surface.current.getBoundingClientRect());
+    };
+    density.addEventListener('change', densityChanged);
     observer.observe(surface.current);
     return () => {
       observer.disconnect();
+      density.removeEventListener('change', densityChanged);
       clearTimeout(timer);
       resizeRequest.current++;
     };
@@ -349,7 +438,7 @@ export function BrowserPane({
   };
   const toggleRecord = async () => {
     if (state.recording) {
-      const saved = await onAction<Recording>('recording:stop');
+      const saved = await onAction<Recording>(share?.active ? 'share:stop' : 'recording:stop');
       if (saved) {
         setRecordingId(saved.id);
         setMode('recordings');
@@ -392,6 +481,7 @@ export function BrowserPane({
             {neo?.status === 'ready' ? '已连接' : neo?.status === 'starting' ? '连接中' : '未连接'}
           </span>
         </div>
+        <SharePanel state={share} ready={ready} onAction={onAction} />
         <ActionButton
           className="icon-button quiet"
           aria-label="收起浏览器"
@@ -401,6 +491,25 @@ export function BrowserPane({
           <X size={16} />
         </ActionButton>
       </header>
+      {share?.active && (
+        <div className="share-control-strip">
+          <span>
+            {share.changingControl
+              ? '正在交接控制权'
+              : share.controllerId === 'host'
+                ? '你正在操作 · 双方操作自动记录'
+                : `${share.participants.find((p) => p.id === share.controllerId)?.name || '参与者'}正在操作`}
+          </span>
+          {share.controllerId !== 'host' && (
+            <ActionButton
+              isDisabled={share.changingControl}
+              onPress={() => void onAction('share:control', { id: 'host' })}
+            >
+              收回控制权
+            </ActionButton>
+          )}
+        </div>
+      )}
       <Tabs
         className="browser-tabstrip"
         selectedKey={state.activeTabId || ''}
@@ -544,7 +653,7 @@ export function BrowserPane({
             onPress={() => void toggleRecord()}
           >
             {state.recording ? <Square size={11} fill="currentColor" /> : <Circle size={12} />}
-            <span>{state.recording ? '结束录制' : '录制'}</span>
+            <span>{share?.active ? '结束共享' : state.recording ? '结束录制' : '录制'}</span>
           </ActionButton>
         </div>
       </div>
@@ -587,6 +696,7 @@ export function BrowserPane({
                 const node = image.current;
                 const source = lastFrame.current;
                 const frame = { ...viewport.current, tabId: activeTab.current };
+                const epoch = receivedEpoch.current;
                 if (!node) return;
                 void node
                   .decode()
@@ -608,6 +718,7 @@ export function BrowserPane({
                       return;
                     }
                     decodedViewport.current = frame;
+                    decodedEpoch.current = epoch;
                     setFrameLoading(false);
                     setViewportPending(!alignedViewport());
                   })
@@ -646,11 +757,17 @@ export function BrowserPane({
               onCompositionStart={() => {
                 composing.current = true;
                 compositionTab.current = activeTab.current;
+                compositionEpoch.current = decodedEpoch.current;
+                compositionGeneration.current = shareRef.current?.generation;
               }}
               onCompositionEnd={(event) => {
                 composing.current = false;
                 compositionCommit.current = { value: event.data, time: Date.now() };
-                sendInput({ type: 'text', text: event.data, tabId: compositionTab.current });
+                if (
+                  compositionEpoch.current === decodedEpoch.current &&
+                  compositionGeneration.current === shareRef.current?.generation
+                )
+                  sendInput({ type: 'text', text: event.data, tabId: compositionTab.current });
                 event.currentTarget.value = '';
               }}
               onInput={(event) => {
@@ -705,7 +822,9 @@ export function BrowserPane({
               <span className="record-dot" />
               <span>正在记录操作</span>
               <span className="muted">{liveSteps.length} 步</span>
-              <ActionButton onPress={() => void toggleRecord()}>结束并查看</ActionButton>
+              <ActionButton onPress={() => void toggleRecord()}>
+                {share?.active ? '结束共享并查看' : '结束并查看'}
+              </ActionButton>
             </div>
           )}
           <div className="browser-status">
@@ -717,27 +836,28 @@ export function BrowserPane({
                   ? '正在连接'
                   : '未连接'}
             </span>
-            <NativeSelect className="viewport-select">
-              <NativeSelect.Trigger
-                className="viewport-mode"
-                aria-label="页面缩放"
-                title={fitLimited ? '页面超宽，可按住 Shift 滚轮横向查看' : '选择页面显示比例'}
-                value={zoomMode}
-                disabled={!ready || state.loading}
-                onChange={(event) => {
-                  if (state.activeTabId)
-                    setZoomModes((previous) => ({
-                      ...previous,
-                      [state.activeTabId!]: event.target.value as 'fit' | 'actual',
-                    }));
-                }}
-              >
-                <NativeSelect.Option value="fit">
-                  适应宽度{zoomMode === 'fit' && zoomPercent < 100 ? ` · ${zoomPercent}%` : ''}
-                </NativeSelect.Option>
-                <NativeSelect.Option value="actual">100%</NativeSelect.Option>
-              </NativeSelect.Trigger>
-            </NativeSelect>
+            <ChoiceSelect
+              className="viewport-select"
+              triggerClassName="viewport-mode"
+              label="页面缩放"
+              title={fitLimited ? '页面超宽，可按住 Shift 滚轮横向查看' : '选择页面显示比例'}
+              value={zoomMode}
+              isDisabled={!ready || state.loading}
+              onChange={(value) => {
+                if (state.activeTabId)
+                  setZoomModes((previous) => ({
+                    ...previous,
+                    [state.activeTabId!]: value as 'fit' | 'actual',
+                  }));
+              }}
+              options={[
+                {
+                  value: 'fit',
+                  label: `适应宽度${zoomMode === 'fit' && zoomPercent < 100 ? ` · ${zoomPercent}%` : ''}`,
+                },
+                { value: 'actual', label: '100%' },
+              ]}
+            />
             {fitLimited && zoomMode === 'fit' && <span className="viewport-limit">可横向滚动</span>}
             {state.inspecting ? (
               <span className="status-right">选择元素</span>
@@ -791,20 +911,17 @@ export function BrowserPane({
                 </ActionButton>
               </div>
               {recordings.length > 1 && (
-                <NativeSelect className="viewport-select">
-                  <NativeSelect.Trigger
-                    className="recording-select"
-                    aria-label="选择操作记录"
-                    value={recording.id}
-                    onChange={(event) => setRecordingId(event.target.value)}
-                  >
-                    {recordings.map((item) => (
-                      <NativeSelect.Option key={item.id} value={item.id}>
-                        {item.title} · {item.steps.length} 步
-                      </NativeSelect.Option>
-                    ))}
-                  </NativeSelect.Trigger>
-                </NativeSelect>
+                <ChoiceSelect
+                  className="viewport-select"
+                  triggerClassName="recording-select"
+                  label="选择操作记录"
+                  value={recording.id}
+                  onChange={setRecordingId}
+                  options={recordings.map((item) => ({
+                    value: item.id,
+                    label: `${item.title} · ${item.steps.length} 步`,
+                  }))}
+                />
               )}
               <ol className="step-list">
                 {recording.steps.map((step, index) => (
@@ -816,7 +933,11 @@ export function BrowserPane({
                       {step.value && <code>{step.value}</code>}
                       <span className="step-meta">
                         {Math.max(0, (step.timestamp - recording.startedAt) / 1000).toFixed(1)}s
-                        {step.source === 'agent' ? ' · Agent' : ''}
+                        {step.actor?.name
+                          ? ` · ${step.actor.name}`
+                          : step.source === 'agent'
+                            ? ' · Agent'
+                            : ''}
                       </span>
                     </div>
                     <Check size={13} className="step-check" />

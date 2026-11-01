@@ -965,3 +965,33 @@ async function readOverlay(page: Page, kind: string) {
     };
   }, kind);
 }
+
+test(
+  'scroll debounce flushes the old participant at a control handoff',
+  { skip: !executable },
+  async (t) => {
+    const f = await fixture(t);
+    await f.page.evaluate(() => {
+      document.body.style.height = '5000px';
+    });
+    await bridge(f.page, 'setActor', 'alice');
+    await f.page.evaluate(() => scrollTo(0, 100));
+    await f.page.evaluate(
+      () => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))),
+    );
+    await bridge(f.page, 'setActor', 'bob');
+    await f.page.evaluate(() => scrollTo(0, 250));
+    await eventually(() => f.events.filter((e) => e.kind === 'scroll').length === 2);
+    const scrolls = f.events.filter((e) => e.kind === 'scroll') as Array<
+      PageEvent & { actorId: string }
+    >;
+    assert.deepEqual(
+      scrolls.map((e) => e.actorId),
+      ['alice', 'bob'],
+    );
+    assert.deepEqual(
+      scrolls.map((e) => JSON.parse(e.value!).y),
+      [100, 250],
+    );
+  },
+);

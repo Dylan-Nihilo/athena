@@ -1,6 +1,6 @@
 {
   "name": "athena",
-  "version": "0.3.1",
+  "version": "0.6.0",
   "private": true,
   "license": "UNLICENSED",
   "author": "Dylan",
@@ -18,7 +18,11 @@
     "setup:browseros": "node scripts/setup-browseros.mjs",
     "package": "npm run build && electron-builder --mac dir",
     "heroui:setup": "node scripts/setup-heroui-pro.mjs",
-    "postinstall": "npm run heroui:setup"
+    "postinstall": "npm run heroui:setup",
+    "test:sharing": "tsx tests/sharing.e2e.ts",
+    "test:complex-agent": "tsx tests/complex-agent.e2e.ts",
+    "test:models": "tsx tests/model-usage.e2e.ts",
+    "test:agent-experience": "tsx tests/agent-experience.e2e.ts"
   },
   "build": {
     "appId": "app.agent.workbench",
@@ -40,7 +44,10 @@
       "category": "public.app-category.developer-tools",
       "target": [
         "dir"
-      ]
+      ],
+      "extendInfo": {
+        "NSLocalNetworkUsageDescription": "Athena 需要连接你选择的局域网，与受邀者共享当前网页。"
+      }
     }
   },
   "dependencies": {

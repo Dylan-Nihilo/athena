@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { chooseOption } from './ui-choices';
 import { _electron as electron, expect } from '@playwright/test';
 import { createServer } from 'node:http';
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -31,6 +32,7 @@ let turns=0;
 readline.createInterface({input:process.stdin}).on('line',line=>{
 const r=JSON.parse(line);fs.appendFileSync(log,line+'\\n');
 if(r.method==='initialize')return send({id:r.id,result:{userAgent:'fixture'}});
+if(r.method==='model/list')return send({id:r.id,result:{data:[{id:'fixture-model',model:'fixture-model',displayName:'Fixture',isDefault:true,supportedReasoningEfforts:[]}],nextCursor:null}});
 if(r.method==='thread/start'||r.method==='thread/resume')return send({id:r.id,result:{thread:{id:'ui-thread'}}});
 if(r.method==='turn/start'){
 const turnId='ui-turn-'+(++turns);
@@ -111,6 +113,10 @@ try {
   await expect
     .poll(async () => (await snapshot()).browser.title, { timeout: 30_000 })
     .toContain('今日清单');
+  await expect
+    .poll(async () => (await snapshot()).codexConnection?.status, { timeout: 30_000 })
+    .toBe('ready');
+  const beforeIme = (await snapshot()).conversations.map(({ id, messages }) => ({ id, messages }));
   const prompt = page.getByRole('textbox', { name: '发送给 Agent 的任务' });
   await prompt.fill('中文输入验证');
   await prompt.evaluate((node) => {
@@ -127,10 +133,17 @@ try {
     node.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: '验证' }));
   });
   await expect(prompt).toHaveValue('中文输入验证');
-  assert.equal(
-    (await snapshot()).conversations.length,
-    0,
-    'IME confirmation must not create a task',
+  assert.deepEqual(
+    (await snapshot()).conversations.map(({ id, messages }) => ({ id, messages })),
+    beforeIme,
+    'IME confirmation must not create a conversation or append task messages',
+  );
+  assert(
+    !(await readFile(log, 'utf8'))
+      .split('\n')
+      .filter(Boolean)
+      .some((line) => JSON.parse(line).method === 'turn/start'),
+    'IME confirmation must not dispatch a model turn',
   );
   await prompt.press('Shift+Enter');
   await expect(prompt).toHaveValue('中文输入验证\n');
@@ -198,7 +211,7 @@ try {
   const firstId = (await snapshot()).browser.activeTabId;
   await page.getByRole('button', { name: '录制', exact: true }).click();
   await page.getByRole('button', { name: '元素检查器', exact: true }).click();
-  await page.getByRole('combobox', { name: '元素查找方式' }).selectOption('selector');
+  await chooseOption(page, '元素查找方式', 'CSS');
   await page.getByRole('textbox', { name: '查找页面元素' }).fill('[data-testid="headline"]');
   await page.getByRole('button', { name: '查找', exact: true }).click();
   await page.locator('.element-results > button').filter({ hasText: '需要修改的标题' }).click();
@@ -321,7 +334,7 @@ try {
     .getByRole('textbox', { name: '阴影', exact: true })
     .fill('0 4px 12px rgba(159, 18, 57, 0.24)');
   await page.getByRole('tab', { name: '动效', exact: true }).click();
-  await page.getByRole('combobox', { name: '元素动效' }).selectOption('breathe-bounce');
+  await chooseOption(page, '元素动效', '呼吸弹跳');
   await page.getByRole('spinbutton', { name: '动效周期' }).fill('1.6');
   await page.getByRole('button', { name: '应用预览', exact: true }).click();
   const inspectSelected = () =>
@@ -354,7 +367,7 @@ try {
   assert.equal(carriedPreview.animation.duration, 1600);
   assert.equal(carriedPreview.styles['background-image'], redGradient);
   await page.getByRole('tab', { name: '元素', exact: true }).click();
-  await page.getByRole('combobox', { name: '元素动效' }).selectOption('none');
+  await chooseOption(page, '元素动效', '无');
   await page.getByRole('button', { name: '应用预览', exact: true }).click();
   await expect.poll(async () => (await inspectSelected()).animation ?? null).toBeNull();
   await page.getByRole('button', { name: '撤销页面修改', exact: true }).click();

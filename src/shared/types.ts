@@ -169,6 +169,7 @@ export interface ElementEditResult {
   element: ElementDetails;
 }
 export interface ElementPreview {
+  actor?: BrowserActor;
   editId: string;
   tabId: string;
   frameId: string;
@@ -176,9 +177,14 @@ export interface ElementPreview {
   nodeId: string;
   changes: ElementEdit;
 }
-export interface RecordedStep {
+export interface BrowserActor {
   id: string;
-  kind: 'navigate' | 'click' | 'fill' | 'select' | 'key' | 'scroll' | 'edit' | 'undo';
+  name: string;
+}
+export interface RecordedStep {
+  actor?: BrowserActor;
+  id: string;
+  kind: 'navigate' | 'click' | 'fill' | 'select' | 'key' | 'scroll' | 'edit' | 'undo' | 'control';
   description: string;
   timestamp: number;
   url: string;
@@ -190,6 +196,8 @@ export interface RecordedStep {
   editId?: string;
 }
 export interface Recording {
+  sharedSessionId?: string;
+  part?: number;
   id: string;
   title: string;
   startedAt: number;
@@ -206,6 +214,7 @@ export interface BrowserTab {
   canGoForward: boolean;
 }
 export interface BrowserState {
+  viewport?: BrowserViewport & { epoch: number };
   status: 'missing' | 'starting' | 'ready' | 'error' | 'stopped';
   engine: 'browseros';
   tabs: BrowserTab[];
@@ -256,6 +265,9 @@ export interface NeoSessionDetail {
   }>;
 }
 export interface BrowserFrame {
+  sequence?: number;
+  epoch?: number;
+  capturedAt?: number;
   data: string;
   width: number;
   height: number;
@@ -290,7 +302,7 @@ export type BrowserInput = (
     }
   | { type: 'text'; text: string }
   | { type: 'resize'; width: number; height: number }
-) & { tabId?: string };
+) & { tabId?: string; frameEpoch?: number };
 export interface BrowserTool {
   name: string;
   description: string;
@@ -308,6 +320,41 @@ export interface ToolCall {
   input: unknown;
   status: 'running' | 'done' | 'error';
   output?: string;
+  startedAt?: number;
+  finishedAt?: number;
+  durationMs?: number;
+}
+export interface AgentPlanStep {
+  step: string;
+  status: 'pending' | 'inProgress' | 'completed';
+}
+/** Public execution facts, never private model reasoning or estimated progress. */
+export interface WebExecutionEvent {
+  id: string;
+  taskId: string;
+  at: number;
+  kind:
+    | 'started'
+    | 'plan'
+    | 'operation'
+    | 'observation'
+    | 'checkpoint'
+    | 'recovery'
+    | 'human-help'
+    | 'artifact'
+    | 'cancelled'
+    | 'finished';
+  status: 'running' | 'succeeded' | 'failed' | 'blocked';
+  operationId?: string;
+  tool?: string;
+  page?: number;
+  durationMs?: number;
+  observationId?: string;
+  outcome?: 'verified' | 'not_applied' | 'unknown';
+  summary?: string;
+  evidence?: string;
+  artifact?: { path: string; bytes: number; sha256: string };
+  plan?: AgentPlanStep[];
 }
 export interface ApprovalRequest {
   id: string;
@@ -331,8 +378,25 @@ export type PendingAgentRequest =
   | { conversationId: string; messageId: string; kind: 'approval'; request: ApprovalRequest }
   | { conversationId: string; messageId: string; kind: 'input'; request: UserInputRequest };
 export type AgentEvent =
+  | {
+      type: 'run-started';
+      threadId: string;
+      turnId: string;
+      model: import('./usage').ExecutionModel;
+      baseline?: import('./usage').TokenCounts;
+    }
+  | {
+      type: 'usage';
+      threadId: string;
+      turnId: string;
+      total: import('./usage').TokenCounts;
+      last: import('./usage').TokenCounts;
+    }
+  | { type: 'model'; threadId: string; turnId: string; model: import('./usage').ExecutionModel }
   | { type: 'delta'; text: string }
   | { type: 'tool'; call: ToolCall }
+  | { type: 'plan'; steps: AgentPlanStep[]; at: number }
+  | { type: 'web-execution'; event: WebExecutionEvent }
   | {
       type: 'status';
       status: 'starting' | 'thinking' | 'working' | 'waiting' | 'idle';
@@ -353,6 +417,10 @@ export interface ChatMessage {
   tools?: ToolCall[];
   context?: string;
   neoSessionId?: string;
+  plan?: AgentPlanStep[];
+  execution?: WebExecutionEvent[];
+  model?: import('./usage').ExecutionModel;
+  failure?: string;
 }
 export interface Conversation {
   id: string;
@@ -389,10 +457,17 @@ export interface Settings {
   workspace: string;
   browserPath?: string;
   agent: AgentId;
+  modelSelection?: import('./usage').ModelSelection;
+}
+export interface CodexConnectionState {
+  status: 'idle' | 'starting' | 'ready' | 'error';
+  conversationId?: string;
+  message?: string;
 }
 export interface AppSnapshot {
   settings: Settings;
   agents: AgentInfo[];
+  codexConnection?: CodexConnectionState;
   browser: BrowserState;
   neo?: NativeNeoState;
   feishu: FeishuState;
@@ -400,8 +475,12 @@ export interface AppSnapshot {
   recordings: Recording[];
   browserFrame?: BrowserFrame;
   pendingRequests?: PendingAgentRequest[];
+  share?: import('./share').ShareState;
 }
 export type AppEvent =
+  | { type: 'codex:state'; state: CodexConnectionState }
+  | { type: 'usage:updated' }
+  | { type: 'share:state'; state: import('./share').ShareState }
   | { type: 'browser:state'; state: BrowserState }
   | { type: 'neo:state'; state: NativeNeoState }
   | { type: 'browser:frame'; frame: BrowserFrame }

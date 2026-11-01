@@ -17,5 +17,9 @@ export default defineConfig(({ command }) => ({
       },
     },
   ],
-  build: { outDir: '../../dist/renderer', emptyOutDir: true },
+  build: {
+    outDir: '../../dist/renderer',
+    emptyOutDir: true,
+    rollupOptions: { input: { main: 'src/renderer/index.html', share: 'src/renderer/share.html' } },
+  },
 }));

@@ -1,5 +1,6 @@
 /** Electron → IPC → real neo viewport regression. --before uses the saved 0.2.3 build. */
 import assert from 'node:assert/strict';
+import { chooseOption } from './ui-choices';
 import { _electron as electron, expect } from '@playwright/test';
 import { createServer } from 'node:http';
 import { access, chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
@@ -84,6 +85,7 @@ try {
             }
           : undefined,
         pixels: { width: image.naturalWidth, height: image.naturalHeight },
+        pixelRatio: window.devicePixelRatio,
         loading: !!document.querySelector('.frame-loading'),
       };
     });
@@ -108,6 +110,16 @@ try {
         0.003,
       'The stream must preserve its native aspect ratio',
     );
+    if (!before) {
+      const width = Math.min(2048, Math.ceil(Math.floor(value.surface.width) * value.pixelRatio));
+      const height = Math.min(2048, Math.ceil(Math.floor(value.surface.height) * value.pixelRatio));
+      const scale = Math.min(2, width / value.frame.width, height / value.frame.height);
+      assert(
+        Math.abs(value.pixels.width - value.frame.width * scale) <= 2,
+        'The bitmap must match panel physical pixels rather than the expanded page viewport',
+      );
+      assert(Math.abs(value.pixels.height - value.frame.height * scale) <= 2);
+    }
   };
   const navigate = async (url: string, title: string) => {
     await page.getByRole('textbox', { name: '网页地址', exact: true }).fill(url);
@@ -168,7 +180,7 @@ try {
   await capture('initial');
   // This is the original failure gate, before any new zoom control is required.
   await fit();
-  await expect(page.getByRole('combobox', { name: '页面缩放', exact: true })).toHaveValue('fit');
+  await expect(page.locator('button[data-choice-label="页面缩放"]')).toContainText('适应宽度');
   let target = await point('#right');
   await page.mouse.click(target.x, target.y);
   await expect.poll(async () => (await query('#counter')).text).toBe('已打开：1');
@@ -242,7 +254,7 @@ try {
     'Wheel scrolling uses the same scale as pointing and moves the intended display distance',
   );
 
-  await page.getByRole('combobox', { name: '页面缩放', exact: true }).selectOption('actual');
+  await chooseOption(page, '页面缩放', '100%');
   await expect
     .poll(async () => {
       const value = await frameGeometry();
@@ -255,7 +267,7 @@ try {
     Math.abs(actual.frame!.width - actual.surface.width) <= 1,
     '100% mode keeps one native CSS pixel per pane pixel',
   );
-  await page.getByRole('combobox', { name: '页面缩放', exact: true }).selectOption('fit');
+  await chooseOption(page, '页面缩放', /^适应宽度/);
   await fit();
   checks.push(
     '100% and fit modes use their respective native viewport dimensions without stretching',

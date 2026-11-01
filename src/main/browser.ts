@@ -1,12 +1,14 @@
 import { validateElementControls, controlProperties } from '../shared/element-controls';
 import { spawn, execFile, type ChildProcess } from 'node:child_process';
-import { access, mkdir } from 'node:fs/promises';
+import { access, mkdir, readFile, writeFile, rename } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type {
+  BrowserActor,
   BrowserFrame,
   BrowserViewport,
   BrowserTab,
@@ -314,6 +316,7 @@ interface FrameContext {
   contextId?: number;
   documentId?: string;
   source?: 'human' | 'agent';
+  actorId?: string;
 }
 interface TabSession {
   info: BrowserTab;
@@ -325,8 +328,11 @@ interface TabSession {
   pendingFrames: Set<Promise<void>>;
   activation: number;
   source: 'human' | 'agent';
+  actorId?: string;
   diagnostics: Array<{ time: number; kind: string; text: string }>;
   edits: Array<{
+    transient?: boolean;
+    actor?: BrowserActor;
     id: string;
     frameId: string;
     documentId: string;
@@ -378,6 +384,7 @@ export class BrowserRuntime {
   private refs = new Map<string, ScopedElement>();
   private width = 1100;
   private height = 760;
+  private captureSize = { width: PREVIEW_MAX_EDGE, height: PREVIEW_MAX_EDGE };
   private fittedViewport?: {
     tabId: string;
     activation: number;
@@ -385,14 +392,22 @@ export class BrowserRuntime {
     paneWidth: number;
     width: number;
   };
-  private frameAckTimer?: ReturnType<typeof setTimeout>;
-  private releaseFrame?: () => void;
+  private frameAcks = new Set<() => void>();
+  private nextIdleFrameAckAt = 0;
   private interactiveFrameUntil = 0;
   private starting?: Promise<void>;
   private disposed = false;
   private queue: Promise<unknown> = Promise.resolve();
+  private pendingWheel?: {
+    input: Extract<BrowserInput, { type: 'wheel' }>;
+    result: Promise<void>;
+    actorId: string;
+    guard?: () => void;
+    epoch: number;
+  };
   private leaseGeneration = 0;
   private agentAllowed = true;
+  private agentNeedsObservation = false;
   private nativeAgentActive = false;
   private pendingDialogs = new Map<string, BrowserChannel>();
   private suppressMouseUp = false;
@@ -401,6 +416,248 @@ export class BrowserRuntime {
   private hoverEpoch = 0;
   private workingFeedback?: ScopedElement & { ref: string };
   private recording?: Recording;
+  private actorContext = new AsyncLocalStorage<{
+    actor: BrowserActor;
+    guard?: () => void;
+    epoch?: number;
+  }>();
+  private actors = new Map<string, BrowserActor>([['host', { id: 'host', name: '主持人' }]]);
+  private queueDepth = 0;
+  private frameSequence = 0;
+  private surfaceEpoch = 0;
+  private surfaceChangedAt = 0;
+  private publishedEpoch = -1;
+  private frameRefreshTimer?: ReturnType<typeof setTimeout>;
+  private frameRefreshTab?: TabSession;
+  private refreshingFrame = false;
+  private resizingViewport = false;
+  private sharedTab?: string;
+  private sharedOrigin?: string;
+  private sharedFrameOrigins = new Set<string>();
+  private heldKeys = new Map<string, Extract<BrowserInput, { type: 'key' }>>();
+  private heldButtons = new Map<string, { x: number; y: number; button: string }>();
+
+  withActor<T>(
+    actor: BrowserActor,
+    guard: (() => void) | undefined,
+    action: () => T,
+    epoch?: number,
+  ): T {
+    this.actors.set(actor.id, { ...actor });
+    return this.actorContext.run({ actor, guard, epoch }, action);
+  }
+  private currentActor(): BrowserActor {
+    return this.actorContext.getStore()?.actor ?? this.actors.get('host')!;
+  }
+  private assertActor(): void {
+    const context = this.actorContext.getStore();
+    context?.guard?.();
+    if (context?.epoch !== undefined && context.epoch !== this.surfaceEpoch)
+      throw new Error('页面已改变，请等待新画面');
+  }
+  getSurfaceEpoch(): number {
+    return this.surfaceEpoch;
+  }
+  getSurfaceViewport(): { width: number; height: number; tabId: string; loading: boolean } {
+    return {
+      width: this.width,
+      height: this.height,
+      tabId: this.activeTabId,
+      loading: this.state.loading,
+    };
+  }
+  private invalidateSurface(): void {
+    this.surfaceEpoch++;
+    this.surfaceChangedAt = Date.now();
+  }
+  /** Invisible document changes may not paint. Refresh once, then fan out the same frame. */
+  private refreshUnpaintedSurface(tab: TabSession): void {
+    if (!this.browser) return;
+    // Rejected stream frames must not keep postponing the same recovery timer.
+    if (this.frameRefreshTimer && this.frameRefreshTab === tab) return;
+    clearTimeout(this.frameRefreshTimer);
+    this.frameRefreshTab = tab;
+    this.frameRefreshTimer = this.actorContext.exit(() =>
+      setTimeout(() => {
+        this.frameRefreshTimer = undefined;
+        this.frameRefreshTab = undefined;
+        if (
+          this.disposed ||
+          this.activeTabId !== tab.info.id ||
+          this.state.loading ||
+          this.publishedEpoch === this.surfaceEpoch ||
+          this.refreshingFrame
+        )
+          return;
+        this.refreshingFrame = true;
+        const requestedEpoch = this.surfaceEpoch;
+        void this.serialize(async () => {
+          const epoch = this.surfaceEpoch,
+            sequence = this.frameSequence;
+          if (
+            this.activeTabId !== tab.info.id ||
+            this.state.loading ||
+            this.publishedEpoch === epoch
+          )
+            return;
+          const metrics = await tab.page.call('Page.getLayoutMetrics');
+          if (epoch !== this.surfaceEpoch || this.activeTabId !== tab.info.id) return;
+          const { data } = await tab.page.call('Page.captureScreenshot', {
+            format: 'jpeg',
+            quality: 88,
+            captureBeyondViewport: false,
+            clip: {
+              x: metrics.cssVisualViewport?.pageX || 0,
+              y: metrics.cssVisualViewport?.pageY || 0,
+              width: this.width,
+              height: this.height,
+              scale: Math.min(
+                1,
+                this.captureSize.width / (this.width * 2),
+                this.captureSize.height / (this.height * 2),
+              ),
+            },
+          });
+          if (
+            this.disposed ||
+            this.activeTabId !== tab.info.id ||
+            epoch !== this.surfaceEpoch ||
+            sequence !== this.frameSequence
+          )
+            return;
+          this.publishedEpoch = epoch;
+          this.options.onFrame({
+            data: `data:image/jpeg;base64,${data}`,
+            width: this.width,
+            height: this.height,
+            tabId: tab.info.id,
+            epoch,
+            sequence: ++this.frameSequence,
+            capturedAt: Date.now(),
+          });
+        }, true)
+          .catch((error) =>
+            this.log(tab, 'frame.refresh', error instanceof Error ? error.message : error),
+          )
+          .finally(() => {
+            this.refreshingFrame = false;
+            if (
+              !this.disposed &&
+              requestedEpoch !== this.surfaceEpoch &&
+              this.publishedEpoch !== this.surfaceEpoch
+            )
+              this.refreshUnpaintedSurface(tab);
+          });
+      }, 60),
+    );
+  }
+  async setSharedTab(tabId?: string): Promise<void> {
+    this.sharedTab = tabId;
+    this.sharedOrigin = tabId ? new URL(this.requireActive(tabId).info.url).origin : undefined;
+    this.sharedFrameOrigins.clear();
+    if (tabId)
+      for (const frame of this.requireActive(tabId).frames.values()) {
+        try {
+          this.sharedFrameOrigins.add(new URL(frame.url).origin);
+        } catch {}
+      }
+    if (tabId) this.revokeAgentControl();
+    await this.browser?.call('Browser.setDownloadBehavior', {
+      behavior: tabId ? 'deny' : 'default',
+    });
+    const tab = this.tabs.get(this.activeTabId);
+    if (tab) await tab.page.call('Page.setInterceptFileChooserDialog', { enabled: Boolean(tabId) });
+  }
+  private sharedNavigation(url: string, actorId: string, mainFrame = true): void {
+    if (!this.sharedTab) return;
+    const origin = new URL(url).origin;
+    if (actorId === 'host') {
+      if (mainFrame && this.sharedOrigin !== origin) {
+        this.sharedOrigin = origin;
+        this.sharedFrameOrigins.clear();
+      }
+      this.sharedFrameOrigins.add(origin);
+    } else if (
+      mainFrame
+        ? origin !== this.sharedOrigin
+        : origin !== this.sharedOrigin && !this.sharedFrameOrigins.has(origin)
+    )
+      throw new Error('共享仅限当前站点，请让主持人打开其他站点');
+  }
+  /** Release held keys/buttons after a lease change, before the next operator is admitted. */
+  resetHumanInput(): Promise<void> {
+    this.latestMove = undefined;
+    this.pendingWheel = undefined;
+    this.suppressMouseUp = false;
+    return this.serialize(async () => {
+      const tab = this.activeTab();
+      if (this.heldButtons.size) await tab.page.call('Input.cancelDragging').catch(() => {});
+      for (const input of this.heldButtons.values())
+        await tab.page.call('Input.dispatchMouseEvent', {
+          type: 'mouseReleased',
+          button: input.button,
+          x: -1,
+          y: -1,
+          buttons: 0,
+        });
+      this.heldButtons.clear();
+      for (const input of this.heldKeys.values())
+        await tab.page.call('Input.dispatchKeyEvent', {
+          type: 'keyUp',
+          key: input.key,
+          code: input.code,
+          modifiers: 0,
+        });
+      this.heldKeys.clear();
+      // Wheel dispatch can acknowledge before compositor scroll events reach the observer.
+      await this.bridge(
+        tab,
+        this.mainFrame(tab),
+        'new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))',
+      ).catch(() => {});
+      for (const frame of await this.collectFrames(tab)) {
+        await this.bridge(tab, frame, 'globalThis.__workbenchPage.flushScroll()').catch(() => {});
+        for (const edit of tab.edits.filter(
+          (e) => e.transient && e.frameId === frame.id && e.documentId === frame.documentId,
+        )) {
+          await this.withActor(edit.actor || this.currentActor(), undefined, async () => {
+            await this.setSource(tab, 'human', frame);
+            await this.bridge(
+              tab,
+              frame,
+              `globalThis.__workbenchPage.commitStyles(${JSON.stringify(edit.localId)})`,
+            );
+          }).catch(() =>
+            this.appendStep({
+              kind: 'control',
+              description: '预览已中断，页面发生变化，请检查当前效果',
+              source: 'human',
+              actor: edit.actor,
+              url: evidenceUrl(tab.info.url),
+              tabId: tab.info.id,
+            }),
+          );
+          edit.transient = false;
+        }
+      }
+      await this.setSource(tab, 'human');
+    }, true);
+  }
+  recordCollaboration(actor: BrowserActor, description: string): void {
+    const tab = this.tabs.get(this.activeTabId);
+    if (tab)
+      this.appendStep({
+        kind: 'control',
+        description,
+        actor,
+        source: 'human',
+        url: evidenceUrl(tab.info.url),
+        tabId: tab.info.id,
+      });
+  }
+  getRecording(): Recording | undefined {
+    return this.recording && structuredClone(this.recording);
+  }
 
   constructor(private options: BrowserOptions) {}
 
@@ -411,6 +668,12 @@ export class BrowserRuntime {
     const tab = this.tabs.get(this.activeTabId);
     return structuredClone({
       ...this.state,
+      viewport: {
+        width: this.width,
+        height: this.height,
+        epoch: this.surfaceEpoch,
+        tabId: this.activeTabId,
+      },
       ...(tab?.info ?? {}),
       tabs: this.listTabs(),
       activeTabId: tab?.info.id,
@@ -420,6 +683,7 @@ export class BrowserRuntime {
           return edit.localRef && edit.changes && frame?.documentId === edit.documentId
             ? [
                 {
+                  actor: edit.actor,
                   editId: edit.id,
                   tabId: tab.info.id,
                   frameId: edit.frameId,
@@ -448,10 +712,78 @@ export class BrowserRuntime {
     tab.diagnostics.push({ time: Date.now(), kind, text: redactBrowserText(text) });
     if (tab.diagnostics.length > 150) tab.diagnostics.shift();
   }
-  private serialize<T>(action: () => Promise<T>): Promise<T> {
-    const result = this.queue.then(action);
+  private serialize<T>(action: () => Promise<T>, control = false): Promise<T> {
+    // An intervening command is an ordering boundary for accumulated wheel input.
+    this.pendingWheel = undefined;
+    if (!control && this.queueDepth >= 128)
+      return Promise.reject(new Error('操作过快，请等待当前输入完成'));
+    const context = this.actorContext.getStore();
+    this.queueDepth++;
+    const result = this.queue
+      .then(() =>
+        this.actorContext.run(context!, async () => {
+          this.assertActor();
+          return action();
+        }),
+      )
+      .finally(() => {
+        this.queueDepth--;
+      });
     this.queue = result.catch(() => {});
     return result;
+  }
+  private boostFrames(): void {
+    this.interactiveFrameUntil = Date.now() + 300;
+    this.releaseFrames();
+  }
+  private releaseFrames(): void {
+    for (const acknowledge of this.frameAcks) acknowledge();
+    this.nextIdleFrameAckAt = 0;
+  }
+  private acknowledgeFrame(page: BrowserChannel, sessionId: number): void {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const acknowledge = () => {
+      if (timer) clearTimeout(timer);
+      this.frameAcks.delete(acknowledge);
+      void page.call('Page.screencastFrameAck', { sessionId }).catch(() => {});
+    };
+    if (Date.now() < this.interactiveFrameUntil) acknowledge();
+    else {
+      // Bound idle work even when the capture pipeline has several frames in flight.
+      this.nextIdleFrameAckAt = Math.max(Date.now(), this.nextIdleFrameAckAt) + PREVIEW_INTERVAL;
+      this.frameAcks.add(acknowledge);
+      timer = setTimeout(acknowledge, this.nextIdleFrameAckAt - Date.now());
+    }
+  }
+  private receiveScreencastFrame(tab: TabSession, p: any): void {
+    const page = tab.page;
+    if (this.disposed || this.activeTabId !== tab.info.id) {
+      void page.call('Page.screencastFrameAck', { sessionId: p.sessionId }).catch(() => {});
+      return;
+    }
+    const capturedAt = p.metadata.timestamp ? Math.round(p.metadata.timestamp * 1000) : Date.now();
+    if (this.resizingViewport || capturedAt < this.surfaceChangedAt) {
+      this.acknowledgeFrame(page, p.sessionId);
+      return;
+    }
+    // A scaled captureScreenshot can temporarily change screencast metadata.
+    // Such frames neither describe our viewport nor supersede a valid fallback.
+    if (p.metadata.deviceWidth !== this.width || p.metadata.deviceHeight !== this.height) {
+      this.acknowledgeFrame(page, p.sessionId);
+      if (!this.refreshingFrame) this.refreshUnpaintedSurface(tab);
+      return;
+    }
+    this.publishedEpoch = this.surfaceEpoch;
+    this.options.onFrame({
+      sequence: ++this.frameSequence,
+      epoch: this.surfaceEpoch,
+      capturedAt,
+      data: `data:image/jpeg;base64,${p.data}`,
+      width: this.width,
+      height: this.height,
+      tabId: tab.info.id,
+    });
+    this.acknowledgeFrame(page, p.sessionId);
   }
   private activeTab(): TabSession {
     const tab = this.tabs.get(this.activeTabId);
@@ -493,6 +825,24 @@ export class BrowserRuntime {
     this.update({ status: 'starting', binaryPath: binary, error: undefined });
     const profile = join(this.options.storageDir, 'browseros-profile');
     await mkdir(profile, { recursive: true });
+    // Neo restores CDP's default download behavior; configure this owned profile's default.
+    const preferencesPath = join(profile, 'Default', 'Preferences');
+    let preferences: Record<string, any> = {};
+    try {
+      preferences = JSON.parse(await readFile(preferencesPath, 'utf8'));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    await mkdir(join(profile, 'Default'), { recursive: true });
+    await mkdir(this.getDownloadDirectory(), { recursive: true, mode: 0o700 });
+    preferences.download = {
+      ...preferences.download,
+      default_directory: this.getDownloadDirectory(),
+      prompt_for_download: false,
+    };
+    const temporary = preferencesPath + '.' + randomUUID();
+    await writeFile(temporary, JSON.stringify(preferences), { mode: 0o600 });
+    await rename(temporary, preferencesPath);
     const child = spawn(
       binary,
       [
@@ -510,7 +860,6 @@ export class BrowserRuntime {
         '--disable-background-networking',
         '--disable-component-update',
         '--disable-features=MediaRouter',
-        '--disable-gpu',
         '--disable-sync',
         '--disable-background-timer-throttling',
         '--disable-renderer-backgrounding',
@@ -594,6 +943,10 @@ export class BrowserRuntime {
       return;
     }
     try {
+      if (this.sharedTab) {
+        await this.browser?.call('Target.closeTarget', { targetId: info.targetId });
+        return;
+      }
       await this.attachTab(info);
     } catch (error) {
       this.log(
@@ -642,29 +995,7 @@ export class BrowserRuntime {
     this.tabs.set(tab.info.id, tab);
     try {
       await this.installChannel(tab, page, true);
-      page.on('Page.screencastFrame', (p) => {
-        if (this.disposed || this.activeTabId !== tab.info.id) {
-          void page.call('Page.screencastFrameAck', { sessionId: p.sessionId }).catch(() => {});
-          return;
-        }
-        this.options.onFrame({
-          data: `data:image/jpeg;base64,${p.data}`,
-          width: p.metadata.deviceWidth || this.width,
-          height: p.metadata.deviceHeight || this.height,
-          tabId: tab.info.id,
-        });
-        const acknowledge = () => {
-          if (this.frameAckTimer) clearTimeout(this.frameAckTimer);
-          this.frameAckTimer = undefined;
-          this.releaseFrame = undefined;
-          void page.call('Page.screencastFrameAck', { sessionId: p.sessionId }).catch(() => {});
-        };
-        this.releaseFrame = acknowledge;
-        this.frameAckTimer = setTimeout(
-          acknowledge,
-          Date.now() < this.interactiveFrameUntil ? 0 : PREVIEW_INTERVAL,
-        );
-      });
+      page.on('Page.screencastFrame', (p) => this.receiveScreencastFrame(tab, p));
       page.on('connection:closed', () => {
         if (!this.disposed && this.tabs.get(tab.info.id) === tab)
           void this.removeTarget(tab.info.id);
@@ -714,17 +1045,19 @@ export class BrowserRuntime {
     return entry;
   }
   private invalidateFrame(tab: TabSession, frame: FrameContext): void {
+    if (this.activeTabId === tab.info.id) this.invalidateSurface();
     frame.revision++;
     frame.contextId = undefined;
     frame.documentId = undefined;
     frame.source = undefined;
+    frame.actorId = undefined;
     for (const [ref, scope] of this.refs)
       if (scope.tabId === tab.info.id && scope.frameId === frame.id) this.refs.delete(ref);
-    const editCount = tab.edits.length;
     tab.edits = tab.edits.filter((edit) => edit.frameId !== frame.id);
     if (this.activeTabId === tab.info.id && this.state.selectedElement?.frameId === frame.id)
       this.update({ selectedElement: undefined });
-    else if (this.activeTabId === tab.info.id && tab.edits.length !== editCount) this.update();
+    else if (this.activeTabId === tab.info.id) this.update();
+    if (this.activeTabId === tab.info.id) this.refreshUnpaintedSurface(tab);
   }
   private async installChannel(
     tab: TabSession,
@@ -810,6 +1143,7 @@ export class BrowserRuntime {
         description: `打开 ${evidenceUrl(frame.url)}`,
         url: evidenceUrl(frame.url),
         source: tab.source,
+        actor: this.actors.get(tab.actorId || 'host'),
         tabId: tab.info.id,
         frameId: frame.id,
       });
@@ -841,6 +1175,7 @@ export class BrowserRuntime {
         this.updateTab(tab, { loading: false });
         void this.refreshTab(tab);
       }
+      if (this.activeTabId === tab.info.id) this.refreshUnpaintedSurface(tab);
     });
     channel.on('Runtime.consoleAPICalled', (p) =>
       this.log(
@@ -874,6 +1209,12 @@ export class BrowserRuntime {
       let allowed = p.request.url === 'about:blank';
       try {
         normalizeBrowserUrl(p.request.url);
+        if (this.sharedTab === tab.info.id)
+          this.sharedNavigation(
+            p.request.url,
+            tab.actorId || 'host',
+            p.frameId === tab.mainFrameId,
+          );
         allowed = true;
       } catch {}
       void channel
@@ -1021,11 +1362,14 @@ export class BrowserRuntime {
         }
         frame.documentId = documentId;
         frame.contextId = contextId;
-        if (newDocument)
+        if (newDocument) {
+          const actor = this.actors.get(tab.actorId || 'host') || this.currentActor();
           await channel.call('Runtime.evaluate', {
-            expression: `globalThis.__workbenchPage.setInspect(${this.activeTabId === tab.info.id && this.state.inspecting})`,
+            expression: `globalThis.__workbenchPage.setInspect(${this.activeTabId === tab.info.id && this.state.inspecting});globalThis.__workbenchPage.setActor(${JSON.stringify(actor.id)})`,
             contextId,
           });
+          frame.actorId = actor.id;
+        }
         assertOwner();
         return { contextId, channel, revision };
       } catch (error) {
@@ -1064,6 +1408,7 @@ export class BrowserRuntime {
   ): Promise<T> {
     const prepared = await this.prepareFrame(tab, frame);
     guard?.();
+    this.assertActor();
     this.assertPreparedContext(tab, frame, prepared);
     const result = await prepared.channel.call('Runtime.evaluate', {
       expression,
@@ -1103,10 +1448,10 @@ export class BrowserRuntime {
     await tab.page.call('Page.startScreencast', {
       format: 'jpeg',
       quality: 88,
-      maxWidth: PREVIEW_MAX_EDGE,
-      maxHeight: PREVIEW_MAX_EDGE,
+      maxWidth: this.captureSize.width,
+      maxHeight: this.captureSize.height,
       everyNthFrame: 1,
-      maxFramesInFlight: 1,
+      maxFramesInFlight: 3,
       sendLastFrame: true,
     });
   }
@@ -1122,11 +1467,12 @@ export class BrowserRuntime {
     source: 'human' | 'agent',
     record = true,
   ): Promise<void> {
+    if (this.sharedTab && this.sharedTab !== tab.info.id)
+      throw new Error('请先停止共享再切换标签页');
     if (this.activeTabId === tab.info.id) return;
+    this.invalidateSurface();
     const previous = this.tabs.get(this.activeTabId);
-    if (this.frameAckTimer) clearTimeout(this.frameAckTimer);
-    this.frameAckTimer = undefined;
-    this.releaseFrame = undefined;
+    this.releaseFrames();
     if (previous) {
       await previous.page.call('Page.stopScreencast').catch(() => {});
       await previous.page
@@ -1165,7 +1511,9 @@ export class BrowserRuntime {
       });
   }
   allowAgentControl(): void {
+    if (this.sharedTab) throw new Error('共享期间由参与者操作页面，请先停止共享再启动 Agent');
     this.agentAllowed = true;
+    this.agentNeedsObservation = false;
   }
   async setNativeAgentActive(value: boolean): Promise<void> {
     this.nativeAgentActive = value;
@@ -1181,6 +1529,9 @@ export class BrowserRuntime {
     if (this.state.status !== 'ready' || !this.endpoint || !this.state.binaryPath)
       throw new Error('浏览器尚未连接');
     return { endpoint: this.endpoint, binaryPath: this.state.binaryPath };
+  }
+  getDownloadDirectory(): string {
+    return resolve(this.options.storageDir, 'downloads');
   }
   /** Native Neo owns the action; Athena owns the visible tab and user-control lease. */
   performNative<T>(
@@ -1215,13 +1566,16 @@ export class BrowserRuntime {
   revokeAgentControl(): void {
     this.leaseGeneration++;
     this.agentAllowed = false;
+    this.agentNeedsObservation = false;
   }
   private humanTakeover(source: string): void {
     this.revokeAgentControl();
+    this.agentNeedsObservation = true;
     this.log(this.tabs.get(this.activeTabId), 'control', `Human takeover: ${source}`);
     this.options.onHumanTakeover();
   }
   newTab(url?: string): Promise<BrowserTab> {
+    if (this.sharedTab) return Promise.reject(new Error('请先停止共享再新建标签页'));
     const initial = url === undefined ? 'about:blank' : normalizeBrowserUrl(url);
     this.humanTakeover('new-tab');
     return this.serialize(() => this.createTab(initial, 'human'));
@@ -1259,6 +1613,7 @@ export class BrowserRuntime {
     });
   }
   closeTab(id: string): Promise<void> {
+    if (this.sharedTab) return Promise.reject(new Error('请先停止共享再关闭标签页'));
     if (!this.tabs.has(id)) return Promise.reject(new Error('标签页不存在'));
     this.humanTakeover('close-tab');
     return this.serialize(() => this.closeTabInternal(id, 'human'));
@@ -1311,14 +1666,17 @@ export class BrowserRuntime {
     only?: FrameContext,
   ): Promise<void> {
     tab.source = source;
+    const actorId = source === 'agent' ? 'agent' : this.currentActor().id;
+    tab.actorId = actorId;
     for (const frame of only ? [only] : await this.collectFrames(tab)) {
-      if (frame.source === source) continue;
+      if (frame.source === source && frame.actorId === actorId) continue;
       await this.bridge(
         tab,
         frame,
-        `globalThis.__workbenchPage.setSource(${JSON.stringify(source)})`,
+        `globalThis.__workbenchPage.setSource(${JSON.stringify(source)});globalThis.__workbenchPage.setActor(${JSON.stringify(actorId)})`,
       );
       frame.source = source;
+      frame.actorId = actorId;
     }
   }
   navigate(url: string): Promise<void> {
@@ -1334,8 +1692,12 @@ export class BrowserRuntime {
     url: string,
     source: 'human' | 'agent',
   ): Promise<void> {
+    this.assertActor();
+    this.sharedNavigation(url, this.currentActor().id);
     tab.source = source;
+    tab.actorId = source === 'agent' ? 'agent' : this.currentActor().id;
     tab.activation++;
+    this.invalidateSurface();
     this.clearTabRefs(tab);
     tab.edits = [];
     if (this.activeTabId === tab.info.id)
@@ -1359,9 +1721,12 @@ export class BrowserRuntime {
     return this.serialize(async () => {
       const tab = this.requireActive(id);
       tab.source = 'human';
+      tab.actorId = this.currentActor().id;
       const h = await tab.page.call('Page.getNavigationHistory');
       const entry = h.entries[h.currentIndex + direction];
       if (entry) {
+        this.sharedNavigation(entry.url, this.currentActor().id);
+        this.assertActor();
         tab.activation++;
         this.clearTabRefs(tab);
         await tab.page.call('Page.navigateToHistoryEntry', { entryId: entry.id });
@@ -1375,6 +1740,7 @@ export class BrowserRuntime {
       const tab = this.requireActive(id);
       tab.activation++;
       tab.source = 'human';
+      tab.actorId = this.currentActor().id;
       this.clearTabRefs(tab);
       await tab.page.call('Page.reload');
     });
@@ -1382,30 +1748,63 @@ export class BrowserRuntime {
   resize(
     width: number,
     height: number,
-    options: { fitToWidth?: boolean; tabId?: string } = {},
+    options: { fitToWidth?: boolean; tabId?: string; pixelRatio?: number } = {},
   ): Promise<BrowserViewport> {
     if (!Number.isFinite(width) || !Number.isFinite(height))
       return Promise.reject(new Error('Invalid browser viewport'));
     if (
       (options.fitToWidth !== undefined && typeof options.fitToWidth !== 'boolean') ||
-      (options.tabId !== undefined && typeof options.tabId !== 'string')
+      (options.tabId !== undefined && typeof options.tabId !== 'string') ||
+      (options.pixelRatio !== undefined &&
+        (!Number.isFinite(options.pixelRatio) || options.pixelRatio <= 0))
     )
       return Promise.reject(new Error('Invalid browser viewport options'));
     const w = Math.round(Math.min(1920, Math.max(320, width))),
       h = Math.round(Math.min(8192, Math.max(100, height)));
+    // Capture for the host panel, not the wider CSS viewport produced by fit-to-width.
+    const pixelRatio = options.pixelRatio ?? 2;
+    const captureSize = {
+      width: Math.max(1, Math.min(PREVIEW_MAX_EDGE, Math.ceil(width * pixelRatio))),
+      height: Math.max(1, Math.min(PREVIEW_MAX_EDGE, Math.ceil(height * pixelRatio))),
+    };
     const id = this.activeTabId || undefined;
     if (options.tabId !== undefined && options.tabId !== id)
       return Promise.reject(new Error('忽略了来自旧标签页的页面尺寸。'));
     if (this.state.status !== 'ready') {
       this.width = w;
       this.height = h;
+      this.captureSize = captureSize;
       return Promise.resolve({ width: w, height: h, tabId: id, limited: false });
     }
     return this.serialize(async () => {
       const tab = this.requireActive(id!);
+      const captureChanged =
+        captureSize.width !== this.captureSize.width ||
+        captureSize.height !== this.captureSize.height;
       if (!options.fitToWidth) this.fittedViewport = undefined;
-      if (!options.fitToWidth && w === this.width && h === this.height)
+      if (!captureChanged && !options.fitToWidth && w === this.width && h === this.height)
         return { width: w, height: h, tabId: id, limited: false };
+      if (!captureChanged && options.fitToWidth && w === this.width && h === this.height) {
+        // URL-only changes still recheck overflow, but a responsive page with
+        // unchanged geometry needs neither a new epoch nor a capture restart.
+        const metrics = await tab.page.call('Page.getLayoutMetrics');
+        const contentWidth = metrics.cssContentSize?.width;
+        const layoutWidth = metrics.cssLayoutViewport?.clientWidth;
+        if (
+          Number.isFinite(contentWidth) &&
+          Number.isFinite(layoutWidth) &&
+          contentWidth <= layoutWidth + 1
+        ) {
+          this.fittedViewport = {
+            tabId: id!,
+            activation: tab.activation,
+            url: tab.info.url,
+            paneWidth: w,
+            width: w,
+          };
+          return { width: w, height: h, tabId: id, limited: false };
+        }
+      }
       const previous = { width: this.width, height: this.height };
       const setViewport = (viewWidth: number, viewHeight: number) =>
         tab.page.call('Emulation.setDeviceMetricsOverride', {
@@ -1414,11 +1813,11 @@ export class BrowserRuntime {
           deviceScaleFactor: 2,
           mobile: false,
         });
-      if (this.frameAckTimer) clearTimeout(this.frameAckTimer);
-      this.frameAckTimer = undefined;
-      this.releaseFrame = undefined;
-      await tab.page.call('Page.stopScreencast');
+      this.resizingViewport = true;
+      this.invalidateSurface();
+      this.releaseFrames();
       try {
+        await tab.page.call('Page.stopScreencast');
         const maxWidth = Math.max(w, Math.min(1920, Math.floor((8192 * w) / h)));
         const fitted = this.fittedViewport;
         const reuseWidth =
@@ -1462,6 +1861,8 @@ export class BrowserRuntime {
           throw new Error('无法读取页面布局尺寸');
         this.width = viewWidth;
         this.height = viewHeight;
+        this.captureSize = captureSize;
+        this.update();
         if (options.fitToWidth)
           this.fittedViewport = {
             tabId: id!,
@@ -1482,7 +1883,11 @@ export class BrowserRuntime {
         await setViewport(previous.width, previous.height).catch(() => {});
         throw error;
       } finally {
+        this.resizingViewport = false;
         await this.startScreencast(tab);
+        // Static pages may only emit a transitional frame when capture restarts.
+        // Keep a single fallback pending until an authoritative frame is published.
+        this.refreshUnpaintedSurface(tab);
       }
     });
   }
@@ -1664,6 +2069,12 @@ export class BrowserRuntime {
   dispatchInput(input: BrowserInput): Promise<void> {
     if (!input || typeof input !== 'object')
       return Promise.reject(new Error('Invalid browser input'));
+    this.assertActor();
+    const actorId = this.currentActor().id;
+    const guard = this.actorContext.getStore()?.guard;
+    const epoch = this.surfaceEpoch;
+    if (input.frameEpoch !== undefined && input.frameEpoch !== epoch)
+      return Promise.reject(new Error('画面已过期，请等待新画面'));
     const id = this.activeTab().info.id;
     if (input.tabId !== undefined && input.tabId !== id)
       return Promise.reject(new Error('忽略了来自旧标签页的输入。'));
@@ -1711,6 +2122,7 @@ export class BrowserRuntime {
         (!Number.isInteger(input.modifiers) || input.modifiers < 0 || input.modifiers > 15)
       )
         return Promise.reject(new Error('Invalid keyboard modifiers'));
+      this.boostFrames();
       this.latestMove = { ...input, tabId: id };
       if (!this.pointerMove) {
         this.pointerMove = (async () => {
@@ -1719,6 +2131,7 @@ export class BrowserRuntime {
             this.latestMove = undefined;
             const tab = this.tabs.get(move.tabId!);
             if (!tab || this.activeTabId !== move.tabId) continue;
+            this.assertActor();
             await tab.page.call('Input.dispatchMouseEvent', {
               type: 'mouseMoved',
               x: move.x,
@@ -1743,8 +2156,54 @@ export class BrowserRuntime {
       this.humanTakeover(
         input.type === 'mouse' ? 'mouse-down' : input.type === 'key' ? 'key-down' : input.type,
       );
-    return this.serialize(async () => {
+    if (input.type === 'wheel') {
+      if (![input.deltaX, input.deltaY].every(Number.isFinite))
+        return Promise.reject(new Error('Invalid scroll input'));
+      if (
+        ![input.x, input.y].every(Number.isFinite) ||
+        input.x < 0 ||
+        input.y < 0 ||
+        input.x > this.width ||
+        input.y > this.height
+      )
+        return Promise.reject(new Error('Pointer is outside the browser viewport'));
+      if (
+        input.modifiers !== undefined &&
+        (!Number.isInteger(input.modifiers) || input.modifiers < 0 || input.modifiers > 15)
+      )
+        return Promise.reject(new Error('Invalid keyboard modifiers'));
+      input = {
+        ...input,
+        tabId: id,
+        deltaX: Math.max(-5000, Math.min(5000, input.deltaX)),
+        deltaY: Math.max(-5000, Math.min(5000, input.deltaY)),
+      };
+      const pending = this.pendingWheel;
+      const previous = pending?.input;
+      if (
+        pending &&
+        previous &&
+        previous.tabId === id &&
+        pending.actorId === actorId &&
+        pending.guard === guard &&
+        pending.epoch === epoch &&
+        previous.x === input.x &&
+        previous.y === input.y &&
+        (previous.modifiers || 0) === (input.modifiers || 0) &&
+        previous.deltaX * input.deltaX >= 0 &&
+        previous.deltaY * input.deltaY >= 0 &&
+        Math.abs(previous.deltaX + input.deltaX) <= 5000 &&
+        Math.abs(previous.deltaY + input.deltaY) <= 5000
+      ) {
+        previous.deltaX += input.deltaX;
+        previous.deltaY += input.deltaY;
+        return pending.result;
+      }
+    }
+    const result = this.serialize(async () => {
+      if (this.pendingWheel?.input === input) this.pendingWheel = undefined;
       const tab = this.requireActive(id);
+      if (epoch !== this.surfaceEpoch) throw new Error('页面已改变，请等待新画面');
       if (input.type === 'key' && input.key === 'Escape' && this.state.inspecting) {
         if (input.action === 'down') await this.setInspectInternal(tab, false);
         return;
@@ -1768,7 +2227,20 @@ export class BrowserRuntime {
         (!Number.isInteger(input.modifiers) || input.modifiers < 0 || input.modifiers > 15)
       )
         throw new Error('Invalid keyboard modifiers');
-      await this.setSource(tab, 'human');
+      this.boostFrames();
+      // New documents start in human mode; only a control handoff needs a frame walk.
+      if (
+        tab.source !== 'human' ||
+        [...tab.frames.values()].some(
+          (frame) =>
+            frame.source === 'agent' ||
+            (actorId !== 'host'
+              ? frame.actorId !== actorId
+              : frame.actorId && frame.actorId !== actorId),
+        )
+      )
+        await this.setSource(tab, 'human');
+      this.assertActor();
       if (input.type === 'mouse') {
         if (
           !['move', 'down', 'up'].includes(input.action) ||
@@ -1792,6 +2264,13 @@ export class BrowserRuntime {
           clickCount: input.action === 'move' ? 0 : Math.min(3, Math.max(1, input.clickCount || 1)),
           modifiers: input.modifiers || 0,
         });
+        if (input.action === 'down')
+          this.heldButtons.set(input.button || 'left', {
+            x: input.x,
+            y: input.y,
+            button: input.button || 'left',
+          });
+        if (input.action === 'up') this.heldButtons.delete(input.button || 'left');
       } else if (input.type === 'wheel') {
         if (![input.deltaX, input.deltaY].every(Number.isFinite))
           throw new Error('Invalid scroll input');
@@ -1825,9 +2304,25 @@ export class BrowserRuntime {
           nativeVirtualKeyCode: input.keyCode,
           modifiers: input.modifiers || 0,
           text: input.action === 'down' ? input.text : undefined,
+          ...(input.action === 'down' &&
+          (input.modifiers || 0) & 6 &&
+          input.key.toLowerCase() === 'a'
+            ? { commands: ['selectAll'] }
+            : {}),
         });
+        if (input.action === 'down') this.heldKeys.set(input.code, input);
+        else this.heldKeys.delete(input.code);
       } else throw new Error('Unsupported browser input');
     });
+    if (input.type === 'wheel') {
+      const pending = { input, result, actorId, guard, epoch };
+      this.pendingWheel = pending;
+      const clear = () => {
+        if (this.pendingWheel === pending) this.pendingWheel = undefined;
+      };
+      void result.then(clear, clear);
+    }
+    return result;
   }
   private async clearHover(tab: TabSession, epoch: number, activation: number): Promise<void> {
     if (
@@ -2191,13 +2686,14 @@ export class BrowserRuntime {
     return this.serialize(async () => {
       if (this.state.selectedElement?.ref !== ref) throw new Error('选区已变化，请重新选取');
       this.validateEdit({ styles });
-      this.interactiveFrameUntil = Date.now() + 300;
-      this.releaseFrame?.();
+      this.boostFrames();
       const { tab, frame, scope } = await this.resolveRef(ref);
       const previous = editId
         ? tab.edits.find((edit) => edit.id === editId && edit.localRef === scope.localRef)
         : undefined;
       if (editId && !previous) throw new Error('预览手势已失效');
+      if (previous?.actor && previous.actor.id !== this.currentActor().id)
+        throw new Error('只能继续自己的预览修改');
       if (!previous) await this.setSource(tab, 'human', frame);
       const result = await this.bridge(
         tab,
@@ -2207,6 +2703,7 @@ export class BrowserRuntime {
       const id = this.registerEdit(tab, frame, result.editId);
       const metadata = tab.edits.find((edit) => edit.id === id)!;
       metadata.localRef = scope.localRef;
+      metadata.transient = true;
       metadata.changes = { styles: { ...metadata.changes?.styles, ...styles } };
       if (!previous) this.update();
       return { editId: id };
@@ -2220,11 +2717,14 @@ export class BrowserRuntime {
         (edit) => edit.id === editId && edit.localRef === scope.localRef,
       );
       if (!metadata) throw new Error('预览手势已失效');
+      if (metadata.actor && metadata.actor.id !== this.currentActor().id)
+        throw new Error('只能提交自己的预览修改');
       const result = await this.bridge(
         tab,
         frame,
         `globalThis.__workbenchPage.commitStyles(${JSON.stringify(metadata.localId)})`,
       );
+      metadata.transient = false;
       const element = await this.exposeDetails(tab, frame, result.element);
       element.semantics = this.state.selectedElement?.semantics || element.semantics;
       element.backendNodeId = this.state.selectedElement?.backendNodeId;
@@ -2256,10 +2756,15 @@ export class BrowserRuntime {
     )
       throw new Error('没有提供修改内容');
   }
-  private registerEdit(tab: TabSession, frame: FrameContext, localId: string): string {
+  private registerEdit(
+    tab: TabSession,
+    frame: FrameContext,
+    localId: string,
+    actor = this.currentActor(),
+  ): string {
     const id = `${tab.info.id}/${frame.id}/${frame.documentId}/${localId}`;
     if (!tab.edits.some((edit) => edit.id === id))
-      tab.edits.push({ id, frameId: frame.id, documentId: frame.documentId || '', localId });
+      tab.edits.push({ actor, id, frameId: frame.id, documentId: frame.documentId || '', localId });
     return id;
   }
   private async editInternal(
@@ -2306,7 +2811,22 @@ export class BrowserRuntime {
     source: 'human' | 'agent',
     guard?: () => void,
   ): Promise<ElementEditResult> {
-    const edit = id ? tab.edits.find((item) => item.id === id) : tab.edits.at(-1);
+    const actor = source === 'agent' ? undefined : this.currentActor();
+    const edit = id
+      ? tab.edits.find((item) => item.id === id)
+      : tab.edits.findLast((item) => !actor || !item.actor || item.actor.id === actor.id);
+    if (actor && edit?.actor && edit.actor.id !== actor.id) throw new Error('只能撤销自己的修改');
+    if (
+      edit &&
+      tab.edits.some(
+        (item) =>
+          item !== edit &&
+          item.localRef === edit.localRef &&
+          item.actor?.id !== actor?.id &&
+          tab.edits.indexOf(item) > tab.edits.indexOf(edit),
+      )
+    )
+      throw new Error('其他参与者已修改此元素，无法撤销较早的修改');
     if (!edit) throw new Error('当前标签页没有可撤销的修改');
     const frame = tab.frames.get(edit.frameId);
     if (!frame) throw new Error('修改所在框架已移除');
@@ -2331,12 +2851,14 @@ export class BrowserRuntime {
     return { editId: edit.id, element };
   }
 
-  startRecording(): void {
+  startRecording(sharedSessionId?: string, part?: number): void {
     const tab = this.activeTab();
     if (this.recording) return;
     this.recording = {
       id: randomUUID(),
-      title: tab.info.title || '浏览器操作',
+      sharedSessionId,
+      part,
+      title: `${sharedSessionId ? '共享 · ' : ''}${tab.info.title || '浏览器操作'}${part && part > 1 ? ` · ${part}` : ''}`,
       startedAt: Date.now(),
       steps: [],
     };
@@ -2391,13 +2913,18 @@ export class BrowserRuntime {
       undo: '撤销修改',
     };
     const editId =
-      typeof event.editId === 'string' ? this.registerEdit(tab, frame, event.editId) : undefined;
+      typeof event.editId === 'string'
+        ? this.registerEdit(tab, frame, event.editId, this.actors.get(event.actorId))
+        : undefined;
     if (event.kind === 'undo' && editId) tab.edits = tab.edits.filter((edit) => edit.id !== editId);
     this.appendStep({
       kind: event.kind,
       description: `${verbs[event.kind]}${target?.name ? `「${target.name}」` : ''}${value && ['key', 'scroll'].includes(event.kind) ? ` ${value}` : ''}`,
       url: evidenceUrl(frame.url || tab.info.url),
       source: event.source,
+      actor:
+        this.actors.get(event.actorId) ??
+        (event.source === 'agent' ? { id: 'agent', name: 'Agent' } : undefined),
       target,
       value,
       tabId: tab.info.id,
@@ -2407,7 +2934,12 @@ export class BrowserRuntime {
   }
   private appendStep(data: Omit<RecordedStep, 'id' | 'timestamp'>): void {
     if (!this.recording || this.recording.steps.length >= 2000) return;
-    const step: RecordedStep = { ...data, id: randomUUID(), timestamp: Date.now() };
+    const step: RecordedStep = {
+      actor: data.source === 'human' ? this.currentActor() : { id: 'agent', name: 'Agent' },
+      ...data,
+      id: randomUUID(),
+      timestamp: Date.now(),
+    };
     const last = this.recording.steps.at(-1);
     if (
       last &&
@@ -2417,6 +2949,7 @@ export class BrowserRuntime {
       last.frameId === step.frameId &&
       last.target?.ref === step.target?.ref &&
       last.source === step.source &&
+      last.actor?.id === step.actor?.id &&
       step.timestamp - last.timestamp < 1500
     ) {
       step.id = last.id;
@@ -2660,7 +3193,17 @@ export class BrowserRuntime {
           throw new Error('tabId is invalid');
         const assertLease = () => {
           if (!this.agentAllowed || generation !== this.leaseGeneration)
-            throw new Error('用户已接管浏览器，请等待新的用户请求。');
+            throw new Error(
+              '用户正在操作页面。请重新读取当前页面，再按新状态继续；不要重放未核对的动作。',
+            );
+        };
+        const observed = async (operation: Promise<ToolResult>): Promise<ToolResult> => {
+          const result = await operation;
+          if (generation !== this.leaseGeneration)
+            throw new Error('观察期间页面被用户操作，请重新读取当前页面。');
+          if (this.agentNeedsObservation && !result.isError && !this.sharedTab)
+            this.allowAgentControl();
+          return result;
         };
         const json = (value: unknown): ToolResult => ({ text: JSON.stringify(value, null, 2) });
         if (name === 'workbench_browser_tabs')
@@ -2691,12 +3234,14 @@ export class BrowserRuntime {
           return json({ activeTabId: this.activeTabId, tabs: this.listTabs() });
         }
         const tab = this.requireActive(typeof input.tabId === 'string' ? input.tabId : capturedTab);
-        if (name === 'workbench_browser_snapshot') return await this.snapshotInternal(tab);
+        if (name === 'workbench_browser_snapshot') return observed(this.snapshotInternal(tab));
         if (name === 'workbench_browser_screenshot') return await this.screenshotInternal(tab);
         if (name === 'workbench_browser_diagnostics') return json(tab.diagnostics);
         if (name === 'workbench_browser_query') {
           const { tabId: _, ...query } = input;
-          return json(await this.queryInternal(tab, query as ElementQuery & { frameId?: string }));
+          return observed(
+            this.queryInternal(tab, query as ElementQuery & { frameId?: string }).then(json),
+          );
         }
         if (name === 'workbench_browser_controls') {
           assertLease();
@@ -2713,7 +3258,7 @@ export class BrowserRuntime {
         }
         if (name === 'workbench_browser_inspect') {
           if (typeof input.ref !== 'string') throw new Error('ref is required');
-          return json(await this.detailsInternal(input.ref));
+          return observed(this.detailsInternal(input.ref).then(json));
         }
         assertLease();
         if (name === 'workbench_browser_navigate') {
@@ -2847,11 +3392,10 @@ export class BrowserRuntime {
   }
   async dispose(): Promise<void> {
     this.disposed = true;
+    clearTimeout(this.frameRefreshTimer);
     this.revokeAgentControl();
     this.recording = undefined;
-    if (this.frameAckTimer) clearTimeout(this.frameAckTimer);
-    this.frameAckTimer = undefined;
-    this.releaseFrame = undefined;
+    this.releaseFrames();
     for (const tab of this.tabs.values()) {
       for (const child of tab.children) child.close();
       tab.page.close();

@@ -1,5 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import type { Conversation, Recording, Settings } from '../shared/types';
 
 export interface StoredData {
@@ -34,7 +35,23 @@ export class Store {
       this.data = parsed;
       for (const conversation of this.data.conversations)
         for (const message of conversation.messages)
-          if (message.status === 'streaming') message.status = 'error';
+          if (message.status === 'streaming') {
+            message.status = 'error';
+            for (const tool of message.tools ?? [])
+              if (tool.status === 'running') {
+                tool.status = 'error';
+                tool.output = '应用已重启，此操作结果未知；重新执行前需检查实际状态。';
+              }
+            if (message.execution)
+              message.execution.push({
+                id: randomUUID(),
+                taskId: message.id,
+                at: Date.now(),
+                kind: 'finished',
+                status: 'failed',
+                summary: '应用已重启，上一轮结果未核对',
+              });
+          }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     }

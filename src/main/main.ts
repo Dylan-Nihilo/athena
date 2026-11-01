@@ -12,13 +12,18 @@ import {
 import { readFile, stat, writeFile } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { createReadStream } from 'node:fs';
 import { BrowserRuntime } from './browser';
-import { CodexSession, detectAgents, browserToolsFingerprint } from './agents';
+import { SharingRuntime } from './sharing';
+import { dispatchBrowserAction } from './browser-actions';
+import { CodexSession, detectAgents } from './agents';
 import { NeoBrowserRuntime } from './neo-browser';
 import { FeishuConnector } from './feishu';
 import { TurnNotifications } from './notifications';
 import { Store } from './store';
+import { UsageStore } from './usage';
+import type { ModelOption } from '../shared/usage';
 import type {
   AgentEvent,
   AgentInfo,
@@ -27,6 +32,8 @@ import type {
   AppSnapshot,
   BrowserFrame,
   BrowserInput,
+  BrowserTool,
+  CodexConnectionState,
   ChatMessage,
   Conversation,
   ElementAnimation,
@@ -49,7 +56,15 @@ app.setName('Agent Workbench');
 app.setAboutPanelOptions({ applicationName: 'Athena' });
 let window: BrowserWindow | undefined;
 let store: Store;
+let usage: UsageStore;
+let modelCatalog: ModelOption[] | undefined;
+let modelCatalogRequest: Promise<ModelOption[]> | undefined;
+let codexConnection: CodexConnectionState = { status: 'idle' };
+let selectedConversationId: string | undefined;
+let connectionRevision = 0;
+const warming = new Map<string, Promise<CodexSession>>();
 let browser: BrowserRuntime;
+let sharing: SharingRuntime | undefined;
 let neo: NeoBrowserRuntime;
 let feishu: FeishuConnector;
 let agents: AgentInfo[] = [];
@@ -87,6 +102,128 @@ function emit(event: AppEvent) {
 function notice(message: string, level: 'info' | 'error' = 'info') {
   emit({ type: 'notice', message, level });
 }
+function saveUsage() {
+  void usage
+    .save()
+    .then(() => emit({ type: 'usage:updated' }))
+    .catch(() => notice('用量记录未能保存，请检查本机存储空间。', 'error'));
+}
+function connectionState(state: CodexConnectionState) {
+  codexConnection = state;
+  emit({ type: 'codex:state', state });
+}
+function codexInfo() {
+  const info = agents.find((agent) => agent.id === 'codex' && agent.available && agent.supported);
+  if (!info?.path || info.authentication === 'missing')
+    throw new Error('请先登录本机 Codex，再刷新连接');
+  return { ...info, path: info.path };
+}
+function selectedConversation() {
+  return (
+    store.data.conversations.find(
+      (item) =>
+        item.id === selectedConversationId &&
+        (!item.workspace || item.workspace === store.data.settings.workspace),
+    ) ??
+    store.data.conversations.find(
+      (item) => !item.workspace || item.workspace === store.data.settings.workspace,
+    ) ??
+    createConversation()
+  );
+}
+async function listModels(refresh = false) {
+  if (!refresh && modelCatalog) return modelCatalog;
+  if (modelCatalogRequest) return modelCatalogRequest;
+  const revision = connectionRevision;
+  const request = (async () => {
+    const client = active?.session ?? (await prepareConversation(selectedConversation()));
+    const models = await client.listModels();
+    if (revision === connectionRevision && !client.isClosed) modelCatalog = models;
+    return models;
+  })();
+  modelCatalogRequest = request;
+  void request
+    .finally(() => {
+      if (modelCatalogRequest === request) modelCatalogRequest = undefined;
+    })
+    .catch(() => {});
+  return request;
+}
+function resetConnections() {
+  connectionRevision++;
+  warming.clear();
+  modelCatalog = undefined;
+  modelCatalogRequest = undefined;
+  const previous = [...sessions.values()];
+  sessions.clear();
+  for (const session of previous) session.close();
+  connectionState({ status: 'idle' });
+}
+function prepareConversation(conversation: Conversation): Promise<CodexSession> {
+  if (active || startingTurn) {
+    const session = sessions.get(conversation.id);
+    if (session && active?.session === session) return Promise.resolve(session);
+    return Promise.reject(new Error('当前任务进行中，切换后的对话将在空闲时连接'));
+  }
+  if (conversation.workspace && conversation.workspace !== store.data.settings.workspace)
+    return Promise.reject(new Error('此对话属于其他工作目录'));
+  selectedConversationId = conversation.id;
+  const pending = warming.get(conversation.id);
+  if (pending) return pending;
+  const existing = sessions.get(conversation.id);
+  const info = agents.find((agent) => agent.id === 'codex');
+  if (
+    existing?.isReady &&
+    info?.path &&
+    existing.matchesConfiguration(store.data.settings.workspace, info.path, neo.getTools())
+  ) {
+    connectionState({ status: 'ready', conversationId: conversation.id });
+    return Promise.resolve(existing);
+  }
+  const revision = connectionRevision;
+  connectionState({ status: 'starting', conversationId: conversation.id });
+  const request = (async () => {
+    const info = codexInfo();
+    try {
+      await neo.start();
+    } catch {
+      /* Local CLI work does not require Neo. */
+    }
+    if (quitting || revision !== connectionRevision) throw new Error('连接配置已改变');
+    // A send may have started while the browser connection was being prepared.
+    if (active || startingTurn) {
+      const existing = sessions.get(conversation.id);
+      if (!existing) throw new Error('任务正在准备，连接由当前任务继续');
+      return existing;
+    }
+    const session = getSession(conversation, info.path, neo.getTools());
+    await session.prepare(store.data.settings.modelSelection);
+    if (quitting || revision !== connectionRevision || sessions.get(conversation.id) !== session)
+      throw new Error('连接配置已改变');
+    if (session.sessionId) conversation.agentSessionId = session.sessionId;
+    conversation.agentToolsFingerprint = session.toolsFingerprint;
+    store.schedule();
+    if (selectedConversationId === conversation.id)
+      connectionState({ status: 'ready', conversationId: conversation.id });
+    return session;
+  })().catch((error) => {
+    if (!quitting && revision === connectionRevision && selectedConversationId === conversation.id)
+      connectionState({
+        status: 'error',
+        conversationId: conversation.id,
+        message: error instanceof Error ? error.message : 'Codex 连接失败',
+      });
+    throw error;
+  });
+  warming.set(conversation.id, request);
+  void request
+    .finally(() => {
+      if (warming.get(conversation.id) === request) warming.delete(conversation.id);
+    })
+    .catch(() => {});
+  return request;
+}
+
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value))
     throw new Error('请求格式不正确');
@@ -138,11 +275,27 @@ function onAgentEvent(conversationId: string, assistant: ChatMessage, event: Age
     active.notifications.handle(event);
   }
   if (event.type === 'delta') assistant.text += event.text;
+  if (event.type === 'run-started') {
+    assistant.model = event.model;
+    usage.bind(assistant.id, event.threadId, event.turnId, event.model, event.baseline);
+    saveUsage();
+  }
+  if (event.type === 'model') {
+    assistant.model = event.model;
+    usage.reroute(event.threadId, event.turnId, event.model);
+    saveUsage();
+  }
   if (event.type === 'tool') {
     assistant.tools ??= [];
     const existing = assistant.tools.findIndex((tool) => tool.id === event.call.id);
     if (existing >= 0) assistant.tools[existing] = event.call;
     else assistant.tools.push(event.call);
+  }
+  if (event.type === 'plan') assistant.plan = event.steps;
+  if (event.type === 'web-execution') {
+    assistant.execution ??= [];
+    assistant.execution.push(event.event);
+    if (event.event.kind === 'plan') assistant.plan = event.event.plan;
   }
   if (event.type === 'complete') {
     if (event.text && !assistant.text) assistant.text = event.text;
@@ -151,11 +304,89 @@ function onAgentEvent(conversationId: string, assistant: ChatMessage, event: Age
   }
   if (event.type === 'error') {
     assistant.status = 'error';
+    assistant.failure = event.message;
     if (!assistant.text) assistant.text = event.message;
   }
   conversation.updatedAt = Date.now();
   store.schedule();
   emit({ type: 'agent:event', conversationId, messageId: assistant.id, event });
+}
+function getSession(
+  conversation: Conversation,
+  executablePath: string,
+  tools: BrowserTool[],
+  history?: string,
+): CodexSession {
+  let session = sessions.get(conversation.id);
+  if (
+    session &&
+    !session.matchesConfiguration(store.data.settings.workspace, executablePath, tools)
+  ) {
+    if (active?.session === session) throw new Error('当前会话仍在执行');
+    sessions.delete(conversation.id);
+    session.close();
+    session = undefined;
+  }
+  if (session?.isClosed) {
+    sessions.delete(conversation.id);
+    session = undefined;
+  }
+  if (!session) {
+    session = new CodexSession({
+      workspace: store.data.settings.workspace,
+      executablePath,
+      sessionId: conversation.agentSessionId,
+      sessionToolsFingerprint: conversation.agentToolsFingerprint,
+      historyForToolUpgrade:
+        history ??
+        (conversation.messages.length
+          ? JSON.stringify(
+              conversation.messages.map(({ role, text, status }) => ({ role, text, status })),
+            )
+          : undefined),
+      tools,
+      inspectSelectedElement: (ref) => browser.getElementDetails(ref),
+      callTool: async (name: string, args: unknown) => {
+        if (!active || active.conversationId !== conversation.id)
+          return { text: '任务已经停止，不能再执行浏览器操作。', isError: true };
+        if (
+          active.readonly &&
+          !readOnlyBrowserTools.has(name) &&
+          !neo.isReadOnly(name, args as Record<string, unknown>)
+        )
+          return { text: '本轮只分析录制，不能执行页面操作。', isError: true };
+        return neo.callTool(name, args as Record<string, unknown>);
+      },
+      onClose: (message) => {
+        if (
+          !quitting &&
+          sessions.get(conversation.id) === session &&
+          selectedConversationId === conversation.id
+        )
+          connectionState({ status: 'error', conversationId: conversation.id, message });
+      },
+      onEvent: (event: AgentEvent) => {
+        if (event.type === 'usage') {
+          if (usage.update(event.threadId, event.turnId, event.total, event.last)) saveUsage();
+          return;
+        }
+        if (!active || active.session !== session || active.conversationId !== conversation.id)
+          return;
+        const current = conversation.messages.find((message) => message.id === active?.messageId);
+        if (current) {
+          const unresolved =
+            event.type === 'complete' ? neo.unresolvedResult(current.id) : undefined;
+          if (unresolved) {
+            if (current.text)
+              onAgentEvent(conversation.id, current, { type: 'delta', text: '\n\n' + unresolved });
+            onAgentEvent(conversation.id, current, { type: 'error', message: unresolved });
+          } else onAgentEvent(conversation.id, current, event);
+        }
+      },
+    });
+    sessions.set(conversation.id, session);
+  }
+  return session;
 }
 async function runTurn(
   conversation: Conversation,
@@ -175,6 +406,9 @@ async function runTurn(
   if (info.authentication === 'missing')
     throw new Error('Codex 尚未登录，请在终端执行 codex login 后刷新。');
   if (!text.trim()) throw new Error('请输入任务');
+  const modelSelection = store.data.settings.modelSelection
+    ? { ...store.data.settings.modelSelection }
+    : undefined;
   if (!conversation.messages.length) conversation.title = text.trim().split('\n')[0].slice(0, 32);
   const visibleHistory = conversation.messages.length
     ? JSON.stringify(
@@ -213,6 +447,8 @@ async function runTurn(
     throw error;
   });
   emit({ type: 'conversation:updated', conversation });
+  usage.start(assistant.id, info.id, modelSelection?.model);
+  saveUsage();
   try {
     await neo.start();
   } catch {
@@ -223,52 +459,13 @@ async function runTurn(
     preparingTurn = undefined;
     assistant.status = 'error';
     assistant.text = '任务已停止';
+    usage.finish(assistant.id, 'cancelled');
+    saveUsage();
     await store.save();
     emit({ type: 'conversation:updated', conversation });
     return assistant.text;
   }
-  const tools = neo.getTools();
-  let session = sessions.get(conversation.id);
-  if (session && session.toolsFingerprint !== browserToolsFingerprint(tools)) {
-    await session.close();
-    sessions.delete(conversation.id);
-    session = undefined;
-  }
-  if (session?.isClosed) {
-    sessions.delete(conversation.id);
-    session = undefined;
-  }
-  if (!session) {
-    session = new CodexSession({
-      workspace: store.data.settings.workspace,
-      executablePath: info.path,
-      sessionId: conversation.agentSessionId,
-      sessionToolsFingerprint: conversation.agentToolsFingerprint,
-      historyForToolUpgrade: visibleHistory,
-      tools,
-      inspectSelectedElement: (ref) => browser.getElementDetails(ref),
-      callTool: async (name: string, args: unknown) => {
-        if (!active || active.conversationId !== conversation.id)
-          return { text: '任务已经停止，不能再执行浏览器操作。', isError: true };
-        if (
-          active.readonly &&
-          !readOnlyBrowserTools.has(name) &&
-          !neo.isReadOnly(name, args as Record<string, unknown>)
-        )
-          return { text: '本轮只分析录制，不能执行页面操作。', isError: true };
-        return name.startsWith('neo_')
-          ? neo.callTool(name, args as Record<string, unknown>)
-          : browser.callTool(name, args);
-      },
-      onEvent: (event: AgentEvent) => {
-        if (!active || active.session !== session || active.conversationId !== conversation.id)
-          return;
-        const current = conversation.messages.find((message) => message.id === active?.messageId);
-        if (current) onAgentEvent(conversation.id, current, event);
-      },
-    });
-    sessions.set(conversation.id, session);
-  }
+  const session = getSession(conversation, info.path, neo.getTools(), visibleHistory);
   const notifications = new TurnNotifications(
     { id: assistant.id, title: conversation.title, source },
     (id, message) => feishu.sendNotification(id, message),
@@ -286,10 +483,14 @@ async function runTurn(
   };
   startingTurn = false;
   preparingTurn = undefined;
-  if (!readonly) browser.allowAgentControl();
-  if (selectedElement && !readonly)
-    void browser.setElementFeedback(selectedElement.ref, 'working').catch(() => {});
   try {
+    if (!session.isReady) connectionState({ status: 'starting', conversationId: conversation.id });
+    await session.prepare(modelSelection);
+    connectionState({ status: 'ready', conversationId: conversation.id });
+    if (active?.cancelled) throw new Error('任务已停止');
+    if (!readonly) browser.allowAgentControl();
+    if (selectedElement && !readonly)
+      void browser.setElementFeedback(selectedElement.ref, 'working').catch(() => {});
     let nativeContext = '';
     if (neo.getState().status === 'ready') {
       const task = await neo.beginTask(assistant.id, readonly);
@@ -305,7 +506,10 @@ async function runTurn(
       text,
       [context, nativeContext].filter(Boolean).join('\n\n') || undefined,
       selectedElement,
+      modelSelection,
     );
+    const unresolved = neo.unresolvedResult(assistant.id);
+    if (unresolved) throw new Error(unresolved);
     if (assistant.status === 'streaming') assistant.status = 'done';
     if (session.sessionId) conversation.agentSessionId = session.sessionId;
     return notifications.includesSecretInput
@@ -313,6 +517,7 @@ async function runTurn(
       : assistant.text;
   } catch (error) {
     assistant.status = 'error';
+    assistant.failure = error instanceof Error ? error.message : '任务未完成';
     if (!assistant.text) assistant.text = error instanceof Error ? error.message : '任务未完成';
     notifications.handle({
       type: 'error',
@@ -322,10 +527,15 @@ async function runTurn(
       ? new Error('本轮包含受保护的信息，请在 Athena 查看执行详情。')
       : error;
   } finally {
+    usage.finish(
+      assistant.id,
+      active?.cancelled ? 'cancelled' : assistant.status === 'done' ? 'completed' : 'failed',
+    );
+    saveUsage();
     browser.revokeAgentControl();
     for (const resolve of active?.nativeApprovals.values() ?? []) resolve(false);
     active?.nativeApprovals.clear();
-    await neo.finishTask(assistant.id).catch(() => {});
+    await neo.finishTask(assistant.id, assistant.status === 'done').catch(() => {});
     if (selectedElement && !readonly)
       await browser.setElementFeedback(selectedElement.ref, null).catch(() => {});
     if (session.sessionId) conversation.agentSessionId = session.sessionId;
@@ -339,6 +549,8 @@ async function runTurn(
       await store.save();
     } finally {
       active = undefined;
+      if (!quitting && selectedConversationId && selectedConversationId !== conversation.id)
+        void prepareConversation(selectedConversation()).catch(() => {});
       emit({ type: 'conversation:updated', conversation });
       emit({
         type: 'agent:event',
@@ -441,6 +653,7 @@ async function handleFeishuMessage(message: FeishuMessage) {
 }
 async function createBrowserRuntime(binaryPath?: string) {
   if (neo) await neo.stop();
+  await sharing?.stop();
   if (browser) await browser.dispose();
   browser = new BrowserRuntime({
     storageDir: path.join(app.getPath('userData'), 'browser'),
@@ -451,21 +664,37 @@ async function createBrowserRuntime(binaryPath?: string) {
         store.schedule();
       }
       emit({ type: 'browser:state', state });
+      sharing?.onBrowserState(state);
       if (state.status === 'ready' && neo?.getState().status === 'stopped')
         void neo.start().catch(() => {});
     },
     onFrame: (frame) => {
       lastFrame = frame;
       emit({ type: 'browser:frame', frame });
+      sharing?.onFrame(frame);
     },
-    onStep: (step) => emit({ type: 'browser:step', step }),
+    onStep: (step) => {
+      emit({ type: 'browser:step', step });
+      sharing?.onStep(step);
+    },
     onSelected: (element) => emit({ type: 'browser:selected', element }),
     onHumanTakeover: () => {
-      if (preparingTurn) preparingTurn.cancelled = true;
-      if (active && !neo?.isHandingOver()) {
-        void stopTurn().catch(() => {});
-        notice('已交回页面控制权');
-      }
+      neo?.onHumanInteraction();
+    },
+  });
+  sharing = new SharingRuntime({
+    browser,
+    storageDir: path.join(app.getPath('userData'), 'sharing'),
+    assetsDir: path.join(__dirname, '../renderer'),
+    onState: (state) => emit({ type: 'share:state', state }),
+    saveRecording: async (recording) => {
+      const index = store.data.recordings.findIndex((r) => r.id === recording.id);
+      if (index >= 0) store.data.recordings[index] = recording;
+      else store.data.recordings.unshift(recording);
+      if (recording.endedAt) {
+        await store.save();
+        emit({ type: 'recording:saved', recording });
+      } else store.schedule();
     },
   });
   neo = new NeoBrowserRuntime(browser, {
@@ -479,12 +708,35 @@ async function createBrowserRuntime(binaryPath?: string) {
       }
     },
     approve: requestNativeApproval,
+    onExecution: (event) => {
+      if (!active || active.messageId !== event.taskId) return;
+      const assistant = getConversation(active.conversationId).messages.find(
+        (item) => item.id === event.taskId,
+      );
+      if (assistant)
+        onAgentEvent(active.conversationId, assistant, { type: 'web-execution', event });
+    },
+    onSession: (taskId, sessionId) => {
+      if (!active || active.messageId !== taskId) return;
+      const message = getConversation(active.conversationId).messages.find(
+        (item) => item.id === taskId,
+      );
+      if (message) {
+        message.neoSessionId = sessionId;
+        store.schedule();
+        emit({
+          type: 'conversation:updated',
+          conversation: getConversation(active.conversationId),
+        });
+      }
+    },
   });
 }
 async function snapshot(): Promise<AppSnapshot> {
   return {
     settings: store.data.settings,
     agents,
+    codexConnection,
     browser: browser.getState(),
     neo: neo?.getState(),
     feishu: feishu.getState(),
@@ -492,17 +744,101 @@ async function snapshot(): Promise<AppSnapshot> {
     recordings: store.data.recordings,
     browserFrame: lastFrame,
     pendingRequests: active?.requests ?? [],
+    share: sharing?.getState(),
   };
 }
 async function invoke(action: string, payload: unknown) {
+  if (action.startsWith('browser:'))
+    return sharing
+      ? sharing.hostAction(action, payload)
+      : dispatchBrowserAction(browser, action, payload);
+  if (action === 'share:state') return sharing!.getState();
+  if (action === 'share:addresses') return SharingRuntime.addresses();
+  if (action === 'share:start') {
+    const data = record(payload);
+    if (active || startingTurn) await stopTurn();
+    const state = await sharing!.start({
+      address: string(data.address, 100),
+      name: string(data.name, 40),
+    });
+    if (lastFrame) sharing!.onFrame(lastFrame);
+    return state;
+  }
+  if (action === 'share:stop') return sharing!.stop();
+  if (action === 'share:invite') return sharing!.renewInvite();
+  if (action === 'share:revoke-invite') return sharing!.revokeInvite();
+  if (action === 'share:approve') {
+    const data = record(payload);
+    if (!['viewer', 'editor'].includes(String(data.role))) throw new Error('权限无效');
+    return sharing!.approve(string(data.id, 100), data.role as 'viewer' | 'editor');
+  }
+  if (action === 'share:remove') return sharing!.remove(string(record(payload).id, 100));
+  if (action === 'share:control') {
+    await sharing!.changeControl(string(record(payload).id, 100));
+    return sharing!.getState();
+  }
+  if (sharing?.active && ['recording:start', 'recording:stop'].includes(action))
+    throw new Error('共享正在自动记录，结束共享后可回看');
   switch (action) {
     case 'app:snapshot':
       return snapshot();
     case 'agents:refresh':
       agents = await detectAgents();
+      if (!active && !startingTurn) {
+        resetConnections();
+        void prepareConversation(selectedConversation()).catch(() => {});
+      }
       return agents;
-    case 'conversation:new':
-      return createConversation();
+    case 'models:list':
+      return listModels(payload !== undefined && record(payload).refresh === true);
+    case 'conversation:prepare': {
+      const conversation = getConversation(record(payload).conversationId);
+      selectedConversationId = conversation.id;
+      if ((active || startingTurn) && active?.conversationId !== conversation.id)
+        return { status: 'idle', conversationId: conversation.id } satisfies CodexConnectionState;
+      await prepareConversation(conversation).catch(() => {});
+      return codexConnection.conversationId === conversation.id
+        ? codexConnection
+        : ({ status: 'idle', conversationId: conversation.id } satisfies CodexConnectionState);
+    }
+    case 'usage:snapshot':
+      return usage.snapshot();
+    case 'settings:model': {
+      if (active || startingTurn) throw new Error('当前任务结束后才能切换模型');
+      const data = record(payload);
+      const model = string(data.model, 256);
+      const effort = data.effort === undefined ? undefined : string(data.effort, 50);
+      const catalog = modelCatalog ?? (await listModels());
+      if (active || startingTurn) throw new Error('当前任务结束后才能切换模型');
+      const option = catalog.find((item) => item.model === model);
+      if (!option || (effort && !option.efforts.some((item) => item.id === effort)))
+        throw new Error('所选模型或推理强度不在 CLI 可用列表中，请刷新后重试');
+      store.data.settings.modelSelection = { model, effort: effort ?? option.defaultEffort };
+      await store.save();
+      return store.data.settings;
+    }
+    case 'artifact:reveal': {
+      const data = record(payload);
+      const conversation = getConversation(data.conversationId);
+      const message = conversation.messages.find((item) => item.id === string(data.messageId, 100));
+      const artifact = message?.execution?.find(
+        (item) => item.id === string(data.eventId, 100),
+      )?.artifact;
+      if (!artifact) throw new Error('找不到此产物记录');
+      const file = await stat(artifact.path).catch(() => undefined);
+      if (!file?.isFile() || file.size !== artifact.bytes)
+        throw new Error('产物已移动、删除或发生变化');
+      const hash = createHash('sha256');
+      for await (const chunk of createReadStream(artifact.path)) hash.update(chunk);
+      if (hash.digest('hex') !== artifact.sha256) throw new Error('产物内容已变化，请先核对文件');
+      shell.showItemInFolder(artifact.path);
+      return true;
+    }
+    case 'conversation:new': {
+      const conversation = createConversation();
+      if (!active && !startingTurn) void prepareConversation(conversation).catch(() => {});
+      return conversation;
+    }
     case 'conversation:send': {
       const data = record(payload);
       const context = data.context === undefined ? undefined : string(data.context, 60_000);
@@ -558,9 +894,9 @@ async function invoke(action: string, payload: unknown) {
       });
       if (selection.canceled || !selection.filePaths[0]) return null;
       store.data.settings.workspace = selection.filePaths[0];
-      for (const session of sessions.values()) await session.close();
-      sessions.clear();
+      resetConnections();
       await store.save();
+      void prepareConversation(selectedConversation()).catch(() => {});
       return store.data.settings;
     }
     case 'settings:agent': {
@@ -582,11 +918,11 @@ async function invoke(action: string, payload: unknown) {
       if (selection.canceled || !selection.filePaths[0]) return null;
       await stat(selection.filePaths[0]);
       store.data.settings.browserPath = selection.filePaths[0];
-      for (const session of sessions.values()) await session.close();
-      sessions.clear();
+      resetConnections();
       await createBrowserRuntime(selection.filePaths[0]);
       await browser.start();
       await store.save();
+      void prepareConversation(selectedConversation()).catch(() => {});
       return store.data.settings;
     }
     case 'neo:connect':
@@ -598,109 +934,6 @@ async function invoke(action: string, payload: unknown) {
       return neo.server.records();
     case 'neo:record':
       return neo.server.detail(string(record(payload).id, 150));
-    case 'browser:start':
-      await browser.start();
-      return browser.getState();
-    case 'browser:tabs':
-      return browser.listTabs();
-    case 'browser:new-tab': {
-      const data = payload === undefined ? {} : record(payload);
-      return browser.newTab(data.url === undefined ? undefined : string(data.url, 4000));
-    }
-    case 'browser:switch-tab':
-      return browser.switchTab(string(record(payload).id, 200));
-    case 'browser:close-tab':
-      return browser.closeTab(string(record(payload).id, 200));
-    case 'browser:query': {
-      const data = record(payload);
-      const query: ElementQuery = {
-        selector: data.selector === undefined ? undefined : string(data.selector, 2000),
-        text: data.text === undefined ? undefined : string(data.text, 2000),
-        role: data.role === undefined ? undefined : string(data.role, 200),
-        exact: data.exact === true,
-        limit: 30,
-      };
-      return browser.queryElements(query);
-    }
-    case 'browser:element':
-      return browser.selectElement(string(record(payload).ref, 1500));
-    case 'browser:element-details':
-      return browser.getElementDetails(string(record(payload).ref, 1500));
-    case 'browser:edit': {
-      const data = record(payload);
-      const changes: ElementEdit = {};
-      if (data.text !== undefined) changes.text = string(data.text, 20_000);
-      if (data.styles !== undefined) {
-        const styles = record(data.styles);
-        if (Object.keys(styles).length > 30) throw new Error('一次修改的样式过多');
-        changes.styles = Object.fromEntries(
-          Object.entries(styles).map(([key, value]) => [string(key, 80), string(value, 500)]),
-        );
-      }
-      if (data.animation !== undefined) {
-        changes.animation =
-          data.animation === null ? null : (record(data.animation) as unknown as ElementAnimation);
-      }
-      return browser.editElement(string(data.ref, 1500), changes);
-    }
-    case 'browser:preview-styles': {
-      const data = record(payload);
-      const styles = Object.fromEntries(
-        Object.entries(record(data.styles)).map(([key, value]) => [
-          string(key, 80),
-          string(value, 500),
-        ]),
-      );
-      return browser.previewStyles(
-        string(data.ref, 1500),
-        styles,
-        data.editId === undefined ? undefined : string(data.editId, 1500),
-      );
-    }
-    case 'browser:commit-styles': {
-      const data = record(payload);
-      return browser.commitStyles(string(data.ref, 1500), string(data.editId, 1500));
-    }
-    case 'browser:undo': {
-      const data = payload === undefined ? {} : record(payload);
-      return browser.undoEdit(data.editId === undefined ? undefined : string(data.editId, 1500));
-    }
-    case 'browser:navigate':
-      await browser.navigate(string(record(payload).url, 4000));
-      return browser.getState();
-    case 'browser:back':
-      await browser.back();
-      return true;
-    case 'browser:forward':
-      await browser.forward();
-      return true;
-    case 'browser:reload':
-      await browser.reload();
-      return true;
-    case 'browser:snapshot':
-      return browser.snapshot();
-    case 'browser:diagnostics':
-      return browser.callTool('workbench_browser_diagnostics', {});
-    case 'browser:input':
-      await browser.dispatchInput(record(payload) as unknown as BrowserInput);
-      return true;
-    case 'browser:resize': {
-      const data = record(payload);
-      if (!Number.isFinite(data.width) || !Number.isFinite(data.height))
-        throw new Error('页面尺寸不正确');
-      if (data.fitToWidth !== undefined && typeof data.fitToWidth !== 'boolean')
-        throw new Error('页面缩放模式不正确');
-      return browser.resize(Number(data.width), Number(data.height), {
-        fitToWidth: data.fitToWidth === true,
-        tabId: data.tabId === undefined ? undefined : string(data.tabId, 200),
-      });
-    }
-    case 'browser:inspect': {
-      const enabled = record(payload).enabled;
-      if (typeof enabled !== 'boolean') throw new Error('选择状态不正确');
-      await browser.setInspect(enabled);
-      return true;
-    }
     case 'recording:start':
       await browser.startRecording();
       return true;
@@ -831,6 +1064,8 @@ async function launch() {
   demoUrl = `http://127.0.0.1:${address.port}`;
   store = new Store(app.getPath('userData'));
   await store.load();
+  usage = new UsageStore(app.getPath('userData'));
+  await usage.load(store.data.conversations);
   agents = await detectAgents();
   await createBrowserRuntime(store.data.settings.browserPath);
   feishu = new FeishuConnector({
@@ -890,6 +1125,9 @@ async function launch() {
   void browser
     .start(demoUrl)
     .catch((error) => notice(error instanceof Error ? error.message : '浏览器启动失败', 'error'));
+  void prepareConversation(selectedConversation())
+    .then(() => listModels())
+    .catch(() => {});
   app.on('activate', () => window?.show());
 }
 app.on('window-all-closed', () => app.quit());
@@ -897,13 +1135,20 @@ app.on('before-quit', (event) => {
   if (quitting) return;
   event.preventDefault();
   quitting = true;
+  if (preparingTurn) preparingTurn.cancelled = true;
+  if (active) active.cancelled = true;
+  browser?.revokeAgentControl();
   demoServer?.close();
   void Promise.allSettled([
-    neo?.stop().then(() => browser?.dispose()),
+    sharing
+      ?.stop()
+      .then(() => neo?.stop())
+      .then(() => browser?.dispose()),
     feishu?.dispose(),
-    store?.save(),
     ...[...sessions.values()].map((session) => session.close()),
-  ]).finally(() => app.quit());
+  ])
+    .then(() => Promise.allSettled([store?.save(), usage?.save()]))
+    .finally(() => app.quit());
 });
 if (!app.requestSingleInstanceLock()) app.quit();
 else {

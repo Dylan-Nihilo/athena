@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
 import {
   ArrowUpRight,
+  ChartNoAxesCombined,
   Check,
   ChevronDown,
   ChevronRight,
@@ -31,6 +32,9 @@ import {
 } from 'lucide-react';
 import { BrowserPane } from './BrowserPane';
 import { ElementInspector } from './ElementInspector';
+import { ExecutionPanel } from './ExecutionPanel';
+import { ModelPicker } from './ModelPicker';
+import { UsagePanel } from './UsagePanel';
 import { AgentIcon } from './AgentIcon';
 import { RequestPanel } from './RequestPanel';
 import type {
@@ -41,6 +45,7 @@ import type {
   BrowserState,
   ChatMessage,
   Conversation,
+  CodexConnectionState,
   ElementDetails,
   ElementEdit,
   ElementRef,
@@ -84,66 +89,6 @@ function errorText(error: unknown) {
   );
 }
 
-function ToolActivity({ tools }: { tools: NonNullable<ChatMessage['tools']> }) {
-  const name = (raw: string) => {
-    const names: Record<string, string> = {
-      snapshot: '查看页面',
-      screenshot: '截取页面',
-      click: '点击元素',
-      fill: '填写内容',
-      select: '选择选项',
-      navigate: '打开网页',
-      scroll: '滚动页面',
-      key: '键盘操作',
-      logs: '读取页面日志',
-      inspect: '检查元素',
-      query: '查找元素',
-      edit: '预览元素修改',
-      undo: '撤销页面修改',
-      tabs: '查看标签页',
-      new_tab: '新建标签页',
-      switch_tab: '切换标签页',
-      close_tab: '关闭标签页',
-      act: '操作网页',
-      run: '处理网页步骤',
-      read: '读取网页',
-      grep: '查找内容',
-      diff: '查看页面变化',
-      wait: '等待页面',
-      upload: '上传文件',
-      download: '下载文件',
-      pdf: '保存页面',
-      request_human_help: '交给你处理',
-      await_human_help: '等待你的操作',
-      status: '检查浏览器连接',
-    };
-    return (
-      names[raw.replace(/^(?:workbench_browser_|neo_)/, '')] ||
-      Object.entries(names).find(([key]) => raw.includes(key))?.[1] ||
-      raw.replace(/^workbench_browser_/, '')
-    );
-  };
-  return (
-    <div className="tool-activity">
-      {tools.map((tool) => (
-        <details className={`tool-call ${tool.status}`} key={tool.id}>
-          <summary>
-            {tool.status === 'running' ? (
-              <Loader2 size={13} className="spin" />
-            ) : tool.status === 'error' ? (
-              <X size={13} />
-            ) : (
-              <Check size={13} />
-            )}
-            <span>{name(tool.name)}</span>
-            <ChevronRight size={12} />
-          </summary>
-          <pre>{tool.output || JSON.stringify(tool.input, null, 2)}</pre>
-        </details>
-      ))}
-    </div>
-  );
-}
 function SettingsModal({
   title,
   children,
@@ -177,8 +122,10 @@ function SettingsModal({
 
 export default function App() {
   const [loaded, setLoaded] = useState(false);
+  const [showUsage, setShowUsage] = useState(false);
   const [settings, setSettings] = useState<Settings>({ workspace: '', agent: 'codex' });
   const [agents, setAgents] = useState<AgentInfo[]>([]);
+  const [codexConnection, setCodexConnection] = useState<CodexConnectionState>({ status: 'idle' });
   const [browser, setBrowser] = useState<BrowserState>(emptyBrowser);
   const [neo, setNeo] = useState<NativeNeoState>({ status: 'stopped' });
   const [nativeRecordId, setNativeRecordId] = useState<string>();
@@ -199,7 +146,7 @@ export default function App() {
   const [resizingBrowser, setResizingBrowser] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(null);
   const [agentMenu, setAgentMenu] = useState(false);
-  const [statusLabel, setStatusLabel] = useState('正在思考');
+  const [statusLabel, setStatusLabel] = useState('已接收任务');
   const [pendingRequests, setPendingRequests] = useState<PendingAgentRequest[]>([]);
   const [toast, setToast] = useState<{ text: string; error: boolean }>();
   const [refreshing, setRefreshing] = useState(false);
@@ -222,6 +169,23 @@ export default function App() {
   );
   const currentBusy = messages.some((message) => message.status === 'streaming');
   const currentAgent = agents.find((item) => item.id === settings.agent);
+  const currentConnection =
+    codexConnection.conversationId === conversationId ? codexConnection : undefined;
+  const agentStatus = !currentAgent?.available
+    ? currentAgent?.path
+      ? '启动异常'
+      : '未检测到'
+    : currentAgent.authentication === 'missing'
+      ? '需要登录'
+      : settings.agent === 'codex' && currentConnection?.status === 'starting'
+        ? '初始化中'
+        : settings.agent === 'codex' && currentConnection?.status === 'ready'
+          ? '已就绪'
+          : settings.agent === 'codex' && currentConnection?.status === 'error'
+            ? '连接失败'
+            : currentAgent.authentication === 'ready'
+              ? '已登录'
+              : '待验证';
   const connected = feishu.status === 'connected' && feishu.paired;
   const drawerWidth = Math.round(Math.min(browserWidth, Math.max(390, panelWidth - 350)));
 
@@ -259,8 +223,12 @@ export default function App() {
     let neoUpdated = false;
     let feishuUpdated = false;
     let requestsUpdated = false;
+    let codexUpdated = false;
     const handle = (event: AppEvent) => {
-      if (event.type === 'neo:state') {
+      if (event.type === 'codex:state') {
+        codexUpdated = true;
+        setCodexConnection(event.state);
+      } else if (event.type === 'neo:state') {
         neoUpdated = true;
         setNeo(event.state);
       } else if (event.type === 'browser:frame') {
@@ -312,8 +280,8 @@ export default function App() {
             agentEvent.label ||
               {
                 starting: '正在连接本机 Agent',
-                thinking: '正在思考',
-                working: '正在执行任务',
+                thinking: '准备下一步',
+                working: '执行已安排的动作',
                 waiting: '等待你的确认',
                 idle: '',
               }[agentEvent.status],
@@ -360,10 +328,22 @@ export default function App() {
           previous.map((item) => {
             if (item.id !== event.conversationId) return item;
             const updated = [...item.messages];
-            const index = updated.findLastIndex((message) => message.role === 'assistant');
+            const index = updated.findIndex((message) => message.id === event.messageId);
             if (index < 0) return item;
-            const message = { ...updated[index], tools: [...(updated[index].tools || [])] };
+            const message = {
+              ...updated[index],
+              tools: [...(updated[index].tools || [])],
+              execution: [...(updated[index].execution || [])],
+            };
             if (agentEvent.type === 'delta') message.text += agentEvent.text;
+            if (agentEvent.type === 'run-started' || agentEvent.type === 'model')
+              message.model = agentEvent.model;
+            if (agentEvent.type === 'plan') message.plan = agentEvent.steps;
+            if (agentEvent.type === 'web-execution') {
+              message.execution ??= [];
+              message.execution.push(agentEvent.event);
+              if (agentEvent.event.kind === 'plan') message.plan = agentEvent.event.plan;
+            }
             if (agentEvent.type === 'tool') {
               const ti = message.tools.findIndex((tool) => tool.id === agentEvent.call.id);
               if (ti < 0) message.tools.push(agentEvent.call);
@@ -375,6 +355,7 @@ export default function App() {
             }
             if (agentEvent.type === 'error') {
               message.status = 'error';
+              message.failure = agentEvent.message;
               if (!message.text) message.text = agentEvent.message;
             }
             updated[index] = message;
@@ -392,6 +373,7 @@ export default function App() {
         setSettings(snapshot.settings);
         if (!neoUpdated) setNeo(snapshot.neo ?? { status: 'stopped' });
         setAgents(snapshot.agents);
+        if (!codexUpdated) setCodexConnection(snapshot.codexConnection ?? { status: 'idle' });
         if (!browserUpdated) {
           activeBrowserTab.current = snapshot.browser.activeTabId;
           setBrowser(snapshot.browser);
@@ -409,6 +391,29 @@ export default function App() {
       unsubscribe();
     };
   }, [showToast, upsert]);
+  useEffect(() => {
+    if (!loaded || !conversationId || settings.agent !== 'codex') return;
+    let disposed = false;
+    void window.workbench
+      .invoke<CodexConnectionState>('conversation:prepare', { conversationId })
+      .then((state) => {
+        if (!disposed) setCodexConnection(state);
+      })
+      .catch((error) => {
+        if (!disposed)
+          setCodexConnection({ status: 'error', conversationId, message: errorText(error) });
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [
+    loaded,
+    conversationId,
+    settings.agent,
+    settings.workspace,
+    settings.modelSelection?.model,
+    settings.modelSelection?.effort,
+  ]);
   useEffect(() => {
     if (stickToBottom.current)
       scroll.current?.scrollTo({ top: scroll.current.scrollHeight, behavior: 'instant' });
@@ -457,6 +462,7 @@ export default function App() {
     composer.current?.querySelector('textarea')?.focus();
   };
   const newConversation = useCallback(async () => {
+    setShowUsage(false);
     const item = await action<Conversation>('conversation:new');
     if (item) {
       upsert(item);
@@ -473,6 +479,7 @@ export default function App() {
       if (!event.metaKey && !event.ctrlKey) return;
       if (event.key.toLowerCase() === 't') {
         event.preventDefault();
+        setShowUsage(false);
         setBrowserVisible(true);
         document.querySelector<HTMLButtonElement>('button[aria-label="新建标签页"]')?.click();
         return;
@@ -497,6 +504,7 @@ export default function App() {
       }
       if (event.key === 'l') {
         event.preventDefault();
+        setShowUsage(false);
         setBrowserVisible(true);
         setTimeout(
           () => document.querySelector<HTMLInputElement>('input[aria-label="网页地址"]')?.focus(),
@@ -616,8 +624,9 @@ export default function App() {
             conversations.map((item) => (
               <ActionButton
                 key={item.id}
-                className={`conversation-link ${item.id === conversationId ? 'active' : ''}`}
+                className={`conversation-link ${item.id === conversationId && !showUsage ? 'active' : ''}`}
                 onPress={() => {
+                  setShowUsage(false);
                   setConversationId(item.id);
                   setSelected(undefined);
                   stickToBottom.current = true;
@@ -637,6 +646,14 @@ export default function App() {
           )}
         </Sidebar.Content>
         <Sidebar.Footer className="sidebar-bottom">
+          <ActionButton
+            className={`sidebar-usage ${showUsage ? 'active' : ''}`}
+            aria-current={showUsage ? 'page' : undefined}
+            onPress={() => setShowUsage(true)}
+          >
+            <ChartNoAxesCombined size={16} />
+            <span>用量</span>
+          </ActionButton>
           <ActionButton className="sidebar-connection" onPress={() => setSettingsTab('feishu')}>
             <Link2 size={16} />
             <span>飞书</span>
@@ -666,29 +683,22 @@ export default function App() {
                 <PanelLeftOpen size={17} />
               </ActionButton>
             )}
-            <span>{conversation?.title || '新对话'}</span>
+            <span>{showUsage ? '用量' : conversation?.title || '新对话'}</span>
           </div>
           <div className="topbar-actions">
             <ActionButton
               className="connection-button local-agent-status"
               onPress={() => setSettingsTab('agent')}
+              title={currentConnection?.status === 'error' ? currentConnection.message : undefined}
             >
               <AgentIcon agent={settings.agent} size={15} />
-              <span
-                className={`status-dot ${currentAgent?.available && currentAgent.authentication === 'ready' ? 'online' : ''}`}
-              />
+              {currentConnection?.status === 'starting' ? (
+                <Loader2 size={12} className="spin" />
+              ) : (
+                <span className={`status-dot ${agentStatus === '已就绪' ? 'online' : ''}`} />
+              )}
               <span>{currentAgent?.name || '本机 Agent'}</span>
-              <span className="agent-status-caption">
-                {currentAgent?.available
-                  ? currentAgent.authentication === 'missing'
-                    ? '需要登录'
-                    : currentAgent.authentication === 'ready'
-                      ? '已连接'
-                      : '待验证'
-                  : currentAgent?.path
-                    ? '启动异常'
-                    : '未检测到'}
-              </span>
+              <span className="agent-status-caption">{agentStatus}</span>
             </ActionButton>
             <span className="toolbar-divider" />
             <ActionButton
@@ -696,6 +706,7 @@ export default function App() {
               aria-label={browserVisible ? '收起浏览器' : '展开浏览器'}
               title="浏览器"
               onPress={() => {
+                setShowUsage(false);
                 setBrowserVisible((value) => !value);
                 if (browserVisible) composer.current?.querySelector('textarea')?.focus();
               }}
@@ -705,7 +716,9 @@ export default function App() {
             </ActionButton>
           </div>
         </header>
+        {showUsage && <UsagePanel />}
         <div
+          hidden={showUsage}
           ref={panels}
           className={`workspace-panels ${resizingBrowser ? 'is-resizing' : ''}`}
           style={{ '--browser-drawer-width': `${drawerWidth}px` } as React.CSSProperties}
@@ -825,7 +838,22 @@ export default function App() {
                             <img src={athenaLogo} alt="" />
                             <span>Athena</span>
                           </div>
-                          {!!message.tools?.length && <ToolActivity tools={message.tools} />}
+                          <ExecutionPanel
+                            message={message}
+                            conversationId={conversationId!}
+                            pending={pendingRequests.find(
+                              (pending) => pending.messageId === message.id,
+                            )}
+                            statusLabel={statusLabel}
+                            onAction={action}
+                            onShowBrowser={() => setBrowserVisible(true)}
+                            onContinue={() => {
+                              setDraft(
+                                '请先核对当前任务的实际结果，再继续未完成的步骤。不要重复已生效的操作。',
+                              );
+                              composer.current?.querySelector('textarea')?.focus();
+                            }}
+                          />
                           {message.text && (
                             <ProChatMessage.Assistant>
                               <ProChatMessage.Content className="markdown">
@@ -849,12 +877,6 @@ export default function App() {
                                 </Markdown>
                               </ProChatMessage.Content>
                             </ProChatMessage.Assistant>
-                          )}
-                          {message.status === 'streaming' && (
-                            <div className="thinking-line">
-                              <span className="thinking-dot" />
-                              <span>{statusLabel || '正在处理'}</span>
-                            </div>
                           )}
                           {message.status === 'error' && (
                             <span className="message-failure">这次任务未完成</span>
@@ -1028,6 +1050,7 @@ export default function App() {
                           </Dropdown.Menu>
                         </Dropdown.Popover>
                       </Dropdown>
+                      <ModelPicker settings={settings} busy={busy} onChange={setSettings} />
                     </PromptInput.ToolbarStart>
                     <PromptInput.ToolbarEnd className="composer-right">
                       <span className="composer-hint">
@@ -1138,7 +1161,7 @@ export default function App() {
       </main>
       {toast && (
         <div
-          className={`toast ${toast.error ? 'error' : ''}`}
+          className={`app-toast ${toast.error ? 'error' : ''}`}
           role={toast.error ? 'alert' : 'status'}
         >
           {toast.error ? <Circle size={14} /> : <Check size={14} />}

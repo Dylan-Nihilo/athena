@@ -1,0 +1,76 @@
+.usage-filters .choice-select {
+  min-width: 140px;
+  max-width: 250px;
+}
+.usage-filters .choice-select-trigger {
+  font-size: 12px;
+}
+.usage-currency-label {
+  margin-left: 8px;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+.usage-main-metric > .usage-billing-note {
+  margin: -10px 0 22px;
+  line-height: 1.7;
+}
+.usage-token-total > strong {
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+.usage-table-cost {
+  color: var(--foreground);
+  font-weight: 600;
+}
+.usage-kpi .kpi__footer {
+  display: block;
+}
+.usage-pricing-details {
+  margin-top: 24px;
+  border-top: 1px solid var(--separator);
+  padding-top: 14px;
+}
+.usage-pricing-details .disclosure__trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 12px;
+  color: var(--secondary);
+  font-size: 12px;
+}
+.usage-pricing-details p {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.8;
+  margin: 12px 0;
+  max-width: 95ch;
+}
+.usage-price-table caption {
+  text-align: left;
+  font-size: 11px;
+  color: var(--muted);
+  padding: 6px 0 12px;
+}
+.usage-price-source {
+  margin-top: 8px;
+  font-size: 11px;
+}
+@container (max-width: 660px) {
+  .usage-panel .usage-overview {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+  }
+  .usage-panel .usage-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .usage-filters .choice-select {
+    max-width: 100%;
+    flex: 1 1 140px;
+  }
+}
+.usage-panel {
+  min-width: 0;
+  container-type: inline-size;
+}

@@ -139,6 +139,7 @@ export class NeoMcpSession {
   private sequence = 0;
   id = '';
   private closed = false;
+  private abort = new AbortController();
   constructor(private baseUrl: string) {}
   async initialize(): Promise<void> {
     const result = await this.request('initialize', {
@@ -154,7 +155,12 @@ export class NeoMcpSession {
       throw new Error('Neo 控制服务身份不匹配');
     await this.request('notifications/initialized', {}, true);
   }
-  private async request(method: string, params: unknown, notification = false): Promise<any> {
+  private async request(
+    method: string,
+    params: unknown,
+    notification = false,
+    timeout = 35_000,
+  ): Promise<any> {
     if (this.closed) throw new Error('Neo 会话已关闭');
     const id = ++this.sequence;
     const response = await fetch(this.baseUrl + '/mcp', {
@@ -165,7 +171,9 @@ export class NeoMcpSession {
         ...(this.id ? { 'Mcp-Session-Id': this.id } : {}),
       },
       body: JSON.stringify({ jsonrpc: '2.0', ...(notification ? {} : { id }), method, params }),
-      signal: AbortSignal.timeout(35_000),
+      signal: timeout
+        ? AbortSignal.any([this.abort.signal, AbortSignal.timeout(timeout)])
+        : this.abort.signal,
     });
     const sessionId = response.headers.get('mcp-session-id');
     if (sessionId) this.id = sessionId;
@@ -182,7 +190,15 @@ export class NeoMcpSession {
     return (await this.request('tools/list', {})).tools;
   }
   call(name: string, args: Record<string, unknown>): Promise<NeoToolResult> {
-    return this.request('tools/call', { name, arguments: args });
+    // A native download can take 60s; human help has no deadline and is stopped via cancel/close.
+    const timeout = ['request_human_help', 'await_human_help'].includes(name)
+      ? 0
+      : name === 'download'
+        ? 65_000
+        : name === 'wait' && (!args.for || args.for === 'time')
+          ? 95_000
+          : 35_000;
+    return this.request('tools/call', { name, arguments: args }, false, timeout);
   }
   async pages(): Promise<NeoPage[]> {
     const result = await this.call('run', { code: 'return await browser.pages.list();' });
@@ -194,6 +210,7 @@ export class NeoMcpSession {
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
+    this.abort.abort();
     if (this.id)
       await fetch(this.baseUrl + '/mcp', {
         method: 'DELETE',

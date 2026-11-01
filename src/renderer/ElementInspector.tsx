@@ -1,5 +1,5 @@
 import { Input, TextArea, Tabs } from '@heroui/react';
-import { NativeSelect } from '@heroui-pro/react';
+import { ChoiceSelect } from './ChoiceSelect';
 import { ActionButton } from './ui';
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import type { ElementControlSurface } from '../shared/element-controls';
@@ -68,15 +68,17 @@ export function ElementInspector({
   onAction,
   onClose,
   onSourceRequest,
+  actorId = 'host',
 }: {
   selected?: ElementRef;
+  actorId?: string;
   tabId?: string;
   previews: ElementPreview[];
   controlSurface?: ElementControlSurface;
   hidden?: boolean;
   onAction: <T = unknown>(action: string, payload?: unknown) => Promise<T>;
   onClose: () => void;
-  onSourceRequest: (element: ElementDetails, changes?: ElementEdit) => void;
+  onSourceRequest?: (element: ElementDetails, changes?: ElementEdit) => void;
 }) {
   const [loadedDetails, setDetails] = useState<ElementDetails>();
   const details = loadedDetails?.ref === selected?.ref ? loadedDetails : undefined;
@@ -92,7 +94,7 @@ export function ElementInspector({
   const [motion, setMotion] = useState<MotionChoice>('none');
   const [duration, setDuration] = useState('1.8');
   const [busy, setBusy] = useState(false);
-  const lastEdit = previews.at(-1);
+  const lastEdit = previews.findLast((edit) => !edit.actor || edit.actor.id === actorId);
   const [status, setStatus] = useState('');
   const request = useRef(0);
   const previousTab = useRef(tabId);
@@ -187,8 +189,7 @@ export function ElementInspector({
     if (syncedPreview.current === signature) return;
     syncedPreview.current = signature;
     const current = request.current;
-    void window.workbench
-      .invoke<ElementDetails>('browser:element-details', { ref: details.ref })
+    void onAction<ElementDetails>('browser:element-details', { ref: details.ref })
       .then((value) => {
         if (value && current === request.current && !dirtyRef.current) load(value);
       })
@@ -317,16 +318,15 @@ export function ElementInspector({
         }}
       >
         <Search size={13} />
-        <NativeSelect>
-          <NativeSelect.Trigger
-            aria-label="元素查找方式"
-            value={searchKind}
-            onChange={(event) => setSearchKind(event.target.value as 'text' | 'selector')}
-          >
-            <NativeSelect.Option value="text">文字</NativeSelect.Option>
-            <NativeSelect.Option value="selector">CSS</NativeSelect.Option>
-          </NativeSelect.Trigger>
-        </NativeSelect>
+        <ChoiceSelect
+          label="元素查找方式"
+          value={searchKind}
+          onChange={(value) => setSearchKind(value as 'text' | 'selector')}
+          options={[
+            { value: 'text', label: '文字' },
+            { value: 'selector', label: 'CSS' },
+          ]}
+        />
         <Input
           aria-label="查找页面元素"
           value={query}
@@ -463,25 +463,24 @@ export function ElementInspector({
                 </div>
               ) : section === 'motion' ? (
                 <div className="motion-fields">
-                  <label>
+                  <div className="motion-choice-field">
                     <span>动效</span>
-                    <NativeSelect>
-                      <NativeSelect.Trigger
-                        aria-label="元素动效"
-                        value={motion}
-                        disabled={busy}
-                        onChange={(event) => setMotion(event.target.value as MotionChoice)}
-                      >
-                        <NativeSelect.Option value="none">无</NativeSelect.Option>
-                        {details.animation && (
-                          <NativeSelect.Option value="custom">当前自定义动效</NativeSelect.Option>
-                        )}
-                        <NativeSelect.Option value="breathe">呼吸</NativeSelect.Option>
-                        <NativeSelect.Option value="bounce">弹跳</NativeSelect.Option>
-                        <NativeSelect.Option value="breathe-bounce">呼吸弹跳</NativeSelect.Option>
-                      </NativeSelect.Trigger>
-                    </NativeSelect>
-                  </label>
+                    <ChoiceSelect
+                      label="元素动效"
+                      value={motion}
+                      isDisabled={busy}
+                      onChange={(value) => setMotion(value as MotionChoice)}
+                      options={[
+                        { value: 'none', label: '无' },
+                        ...(details.animation
+                          ? [{ value: 'custom', label: '当前自定义动效' }]
+                          : []),
+                        { value: 'breathe', label: '呼吸' },
+                        { value: 'bounce', label: '弹跳' },
+                        { value: 'breathe-bounce', label: '呼吸弹跳' },
+                      ]}
+                    />
+                  </div>
                   <label>
                     <span>周期（秒）</span>
                     <Input
@@ -567,14 +566,16 @@ export function ElementInspector({
             >
               <Undo2 size={14} />
             </ActionButton>
-            <ActionButton
-              className="secondary-button"
-              isDisabled={busy || !validMotion}
-              onPress={() => onSourceRequest(details, sourceChanges())}
-            >
-              修改源码
-              <ArrowUpRight size={12} />
-            </ActionButton>
+            {onSourceRequest && (
+              <ActionButton
+                className="secondary-button"
+                isDisabled={busy || !validMotion}
+                onPress={() => onSourceRequest(details, sourceChanges())}
+              >
+                修改源码
+                <ArrowUpRight size={12} />
+              </ActionButton>
+            )}
             {section !== 'adjust' && (
               <ActionButton
                 className="primary-button"

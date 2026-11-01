@@ -565,6 +565,7 @@ test(
       const previews = runtime.getState().previewEdits!;
       assert.deepEqual(previews, [
         {
+          actor: { id: 'host', name: '主持人' },
           editId: edited.editId,
           tabId: tabA,
           frameId: edited.element.frameId,

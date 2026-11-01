@@ -32,6 +32,7 @@ export const browserPageSource = String.raw`(() => {
   let nextEditId = 0;
   let nextAnimationId = 0;
   let source = 'human';
+  let actorId = 'host';
   let maskNodes = [];
   let inspecting = false;
   let overlayHost, overlayRoot, overlayFrame = 0;
@@ -276,7 +277,7 @@ export const browserPageSource = String.raw`(() => {
   },true);
   window.addEventListener('pagehide',()=>globalThis.__workbenchPage?.clearOverlays());
   function send(payload) {
-    try { globalThis.__workbenchEvent(JSON.stringify({...payload,docId,source})); } catch {}
+    try { globalThis.__workbenchEvent(JSON.stringify({docId,source,actorId,...payload})); } catch {}
   }
   function textEditState(el) {
     if (sensitive(el)) return {editableText:false,editReason:'Sensitive fields cannot be edited.'};
@@ -413,13 +414,20 @@ export const browserPageSource = String.raw`(() => {
     if (!['Enter','Tab','Escape','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(event.key)) return;
     send({kind:'key',target:describe(eventTarget(event)),value:event.key});
   },true);
-  let scrollTimer;
+  let scrollTimer, pendingScroll;
+  function flushScroll() {
+    clearTimeout(scrollTimer);
+    if (pendingScroll) { send(pendingScroll); pendingScroll=undefined; }
+  }
   document.addEventListener('scroll',()=> {
     clearTimeout(scrollTimer);
-    scrollTimer=setTimeout(()=>send({kind:'scroll',value:JSON.stringify({x:scrollX,y:scrollY})}),180);
+    pendingScroll={kind:'scroll',value:JSON.stringify({x:scrollX,y:scrollY}),source,actorId};
+    scrollTimer=setTimeout(flushScroll,180);
   },true);
   globalThis.__workbenchPage = {
     docId,
+    setActor(value) { if(actorId!==value) flushScroll(); actorId=value; },
+    flushScroll,
     setSource(value) { source=value==='agent' ? 'agent' : 'human'; },
     setInspect(value) { inspecting=!!value;hoverPoint=null;hoverElement=null;refreshOverlays(); },
     leave() { hoverPoint=null;hoverElement=null;refreshOverlays(); },

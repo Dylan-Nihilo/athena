@@ -2,6 +2,7 @@
  * --before uses the saved pre-decode-gate component in .runtime/viewport-before-decode.
  */
 import assert from 'node:assert/strict';
+import { chooseOption } from './ui-choices';
 import { access, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { chromium, expect } from '@playwright/test';
@@ -22,7 +23,7 @@ import {BrowserPane} from ${JSON.stringify(component)};
 const svg=(w,h,color)=>'data:image/svg+xml;base64,'+btoa('<svg xmlns="http://www.w3.org/2000/svg" width="'+w+'" height="'+h+'"><rect width="100%" height="100%" fill="'+color+'"/></svg>');
 const small=svg(620,400,'#bdd1f5'),large=svg(1100,710,'#a3ddbb'),delayed=svg(1100,710,'#e4cbb4'),latest=svg(1100,710,'#cebbef'),wrongAspect=svg(1100,400,'#f1b6be');
 const listeners=[];
-const f=window.__frameFixture={inputs:[],held:null,holdSource:null,deferSource:null,decodes:[],fitImage:small,small,large,delayed,latest,wrongAspect};
+const f=window.__frameFixture={inputs:[],resizes:[],held:null,holdSource:null,deferSource:null,decodes:[],fitImage:small,small,large,delayed,latest,wrongAspect};
 const descriptor=Object.getOwnPropertyDescriptor(HTMLImageElement.prototype,'src');
 const decode=HTMLImageElement.prototype.decode;
 Object.defineProperty(HTMLImageElement.prototype,'src',{...descriptor,set(value){if(value===f.holdSource){f.held={node:this,value};return;}descriptor.set.call(this,value);}});
@@ -31,8 +32,10 @@ f.releaseImage=()=>{f.holdSource=null;const held=f.held;f.held=null;if(held)desc
 f.emit=(data)=>{for(const listener of listeners)listener({type:'browser:frame',frame:{width:1100,height:710,tabId:'a',data}});};
 f.releaseOldDecode=()=>{const pending=f.decodes.splice(0);for(const item of pending)item.resolve();};
 window.workbench={onEvent(fn){listeners.push(fn);return()=>{}},async invoke(name,payload){
+if(name==='share:state')return {active:false,participants:[],controllerId:'host',generation:0};
 if(name==='browser:input'){f.inputs.push(payload);return true;}
 if(name==='browser:resize'){
+f.resizes.push(payload);
 const data=payload.fitToWidth?f.fitImage:small;
 const view={width:data===small?620:1100,height:data===small?400:710,tabId:'a'};
 for(const listener of listeners)listener({type:'browser:frame',frame:{...view,data}});
@@ -93,7 +96,8 @@ try {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto(`http://127.0.0.1:${address.port}`);
-  const mode = page.getByRole('combobox', { name: '页面缩放' });
+  const mode = (value: 'actual' | 'fit') =>
+    chooseOption(page, '页面缩放', value === 'actual' ? '100%' : /^适应宽度/);
   const settled = () => expect(page.locator('.frame-loading')).toHaveCount(0);
   const inputs = () =>
     page.evaluate(() =>
@@ -105,7 +109,7 @@ try {
     await page.mouse.click(bounds.x + 550, bounds.y + 120);
   };
   await settled();
-  await mode.selectOption('actual');
+  await mode('actual');
   await settled();
   await page.evaluate(() => {
     const f = (window as any).__frameFixture;
@@ -113,7 +117,7 @@ try {
     f.holdSource = f.large;
     f.inputs = [];
   });
-  await mode.selectOption('fit');
+  await mode('fit');
   await expect
     .poll(() => page.evaluate(() => Boolean((window as any).__frameFixture.held)))
     .toBe(true);
@@ -130,7 +134,7 @@ try {
   assert.ok(Math.abs((await inputs())[0].x - (550 * 1100) / 620) < 0.01);
   checks.push('New viewport input waits for image presentation, then uses the new uniform scale');
 
-  await mode.selectOption('actual');
+  await mode('actual');
   await settled();
   await page.evaluate(() => {
     const f = (window as any).__frameFixture;
@@ -138,11 +142,11 @@ try {
     f.deferSource = f.delayed;
     f.inputs = [];
   });
-  await mode.selectOption('fit');
+  await mode('fit');
   await expect
     .poll(() => page.evaluate(() => (window as any).__frameFixture.decodes.length))
     .toBeGreaterThan(0);
-  await mode.selectOption('actual');
+  await mode('actual');
   await settled();
   await page.evaluate(() => {
     const f = (window as any).__frameFixture;
@@ -150,7 +154,7 @@ try {
     f.holdSource = f.latest;
     f.inputs = [];
   });
-  await mode.selectOption('fit');
+  await mode('fit');
   await expect
     .poll(() => page.evaluate(() => Boolean((window as any).__frameFixture.held)))
     .toBe(true);
@@ -193,6 +197,31 @@ try {
   assert.equal((await inputs()).length, 1);
   checks.push(
     'Transitional frames with mismatched bitmap proportions remain blocked until a matching frame arrives',
+  );
+  const cdp = await page.context().newCDPSession(page);
+  for (const [index, pixelRatio] of [1.5, 2].entries()) {
+    await cdp.send('Emulation.setDeviceMetricsOverride', {
+      // CDP needs a layout invalidation to dispatch media changes; the panel stays 620×400.
+      width: 1001 + index,
+      height: 900,
+      deviceScaleFactor: pixelRatio,
+      mobile: false,
+    });
+    await expect
+      .poll(() =>
+        page.evaluate(() => ({
+          actual: window.devicePixelRatio,
+          sent: (window as any).__frameFixture.resizes.at(-1)?.pixelRatio,
+        })),
+      )
+      .toEqual({ actual: pixelRatio, sent: pixelRatio });
+    await settled();
+    const size = await page.locator('.browser-surface').boundingBox();
+    assert.equal(size!.width, 620);
+    assert.equal(size!.height, 400);
+  }
+  checks.push(
+    'Display density changes update capture even when panel CSS geometry stays unchanged',
   );
   assert.deepEqual(errors, []);
   await writeFile(

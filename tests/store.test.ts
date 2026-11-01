@@ -15,7 +15,16 @@ test('workspace persists and interrupted responses do not look live after restar
       title: '工作',
       updatedAt: 1,
       messages: [
-        { id: 'message', role: 'assistant', text: '尚未完成', createdAt: 1, status: 'streaming' },
+        {
+          id: 'message',
+          role: 'assistant',
+          text: '尚未完成',
+          createdAt: 1,
+          status: 'streaming',
+          plan: [{ step: '核对回执', status: 'inProgress' }],
+          tools: [{ id: 'submit', name: 'neo_act', input: {}, status: 'running', startedAt: 1 }],
+          execution: [{ id: 'op', taskId: 'message', at: 1, kind: 'operation', status: 'running' }],
+        },
       ],
     });
     await first.save();
@@ -23,6 +32,17 @@ test('workspace persists and interrupted responses do not look live after restar
     await second.load();
     assert.equal(second.data.conversations[0].messages[0].status, 'error');
     assert.equal(second.data.conversations[0].messages[0].text, '尚未完成');
+    const message = second.data.conversations[0].messages[0];
+    assert.equal(message.tools?.[0].status, 'error');
+    assert.match(message.tools?.[0].output ?? '', /结果未知/);
+    assert.equal(
+      message.tools?.[0].durationMs,
+      undefined,
+      'Unknown execution duration is not invented',
+    );
+    assert.equal(message.execution?.at(-1)?.kind, 'finished');
+    assert.equal(message.execution?.at(-1)?.status, 'failed');
+    assert.equal(message.plan?.[0].step, '核对回执');
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
