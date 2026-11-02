@@ -1,49 +1,90 @@
-# Athena
+<p align="center">
+  <img src="docs/brand/athena-logo.png" alt="Athena Logo" width="128" height="128" />
+</p>
 
-Athena 是运行在 Mac 上的本地 AI 工作台：用 Codex 处理真实项目，在同一窗口浏览网页、调整页面元素，并核对任务结果。
+<h1 align="center">ATHENA</h1>
 
-- **本机任务**：复用已登录的 Codex CLI，展示计划、工具动作、审批、结果与产物。
-- **首次准备**：用连续对话完成 Codex 检测、安装与登录、工作目录确认，以及可选的网页工具准备。
-- **网页工作区**：BrowserOS neo 多标签浏览、元素选取、可撤销预览与操作录制。
-- **页面协作**：邀请他人查看当前网页，分别管理操作权限与控制权。
-- **模型与用量**：读取 CLI 支持的模型，汇总真实 Token 与 USD API 等价估算。
+<p align="center">
+  <strong>在一个工作台里，处理项目与网页任务。</strong>
+</p>
 
-![Athena 实际应用工作区](docs/screenshots/workspace.png)
+<p align="center">
+  让 Codex 处理项目，在真实网页上预览修改，与他人一起查看结果。
+</p>
 
-## 下载
+<p align="center">
+  <a href="https://github.com/Dylan-Nihilo/athena/releases/download/v0.7.0/Athena-0.7.0-mac-arm64.dmg"><strong>下载 macOS 版</strong></a>
+  &nbsp;·&nbsp;
+  <a href="docs/user-guide.md">使用指南</a>
+  &nbsp;·&nbsp;
+  <a href="CHANGELOG.md">查看更新</a>
+</p>
 
-**最新版本：[0.7.0](https://github.com/Dylan-Nihilo/athena/releases/tag/v0.7.0)。**
+<p align="center">
+  <sub>macOS · Apple Silicon · v0.7.0</sub>
+</p>
 
-| 平台                  | 安装包                                                                                                         |
-| --------------------- | -------------------------------------------------------------------------------------------------------------- |
-| macOS · Apple Silicon | [Athena 0.7.0 DMG](https://github.com/Dylan-Nihilo/athena/releases/download/v0.7.0/Athena-0.7.0-mac-arm64.dmg) |
-| macOS · Apple Silicon | [Athena 0.7.0 ZIP](https://github.com/Dylan-Nihilo/athena/releases/download/v0.7.0/Athena-0.7.0-mac-arm64.zip) |
+<p align="center">
+  <img src="docs/screenshots/workspace.png" alt="Athena 实际应用：左侧项目与对话，右侧 BrowserOS 网页工作区" width="1100" />
+</p>
 
-[SHA-256 校验文件](https://github.com/Dylan-Nihilo/athena/releases/download/v0.7.0/SHA256SUMS.txt) · [全部版本](https://github.com/Dylan-Nihilo/athena/releases)
+<p align="center"><sub>项目、对话与网页，在同一个窗口里。</sub></p>
 
-当前项目采用 ad-hoc 签名，尚未配置 Developer ID 分发签名、公证或自动更新。安装包不包含你的 Codex 登录或 BrowserOS neo；首次引导可按需准备运行组件。
+## 从任务，到看得见的结果
 
-版本变化见 [CHANGELOG](CHANGELOG.md)。安装和使用细节见 [用户指南](docs/user-guide.md)。
+### 把项目任务交给 Codex
 
-## 运行前提
+复用本机 Codex 的已有登录，在选定的项目目录中开展工作。查看计划与执行结果，处理审批或补充信息，也可以随时停止当前任务。模型选择和用量都有独立入口。
 
-1. **macOS Apple Silicon**：当前安装包的分发目标。
-2. **Codex CLI**：首次引导会检测已有安装与登录；缺少时展示官方来源和安装位置，再由你确认准备。
-3. **BrowserOS neo（网页功能需要）**：引导可复用已有安装或准备运行组件，也可以稍后设置；普通 Chrome 不能替代它。
+### 选中网页元素，直接调整
 
-Codex 安装与登录参见 [官方说明](https://github.com/openai/codex#quickstart)。Athena 复用 CLI 登录，模型请求使用对应账户的配额或计费。
+在真实网页中选中元素，调整文字、颜色、间距与布局，预览效果并随时撤销。需要修改源码时，可以把选中元素和预览改动作为上下文交给 Codex；页面预览与源码保存分开处理。
 
-已有用户直接进入工作台，可从「设置与连接」重开引导。选择、检测和结果会留在引导对话中；取消或回看不会自动重放安装与登录。
+### 共享当前网页，一起查看
 
-BrowserOS neo 使用独立 profile，在后台运行；网页画面与输入位于 Athena 窗口内。源码开发时可用下方脚本安装项目固定版本。
+通过邀请让他人加入当前页面，分别管理查看权限、操作权限和当前控制权。共享过程中保留操作记录，方便一起核对变化。[了解页面协作 →](docs/shared-workspace.md)
 
-当前任务执行器只接通 **Codex**。其他 CLI 的安装检测不代表已接入执行；桌面 Computer Use 仍处调研阶段。详见 [能力边界](docs/user-guide.md#能力与验证边界)。
+## 三步开始
 
-## 从源码开发
+1. **打开 Athena。** 下载 DMG，将应用拖入 Applications。
+2. **完成首次准备。** 引导会检测 Codex 与已有登录，按需展示安装计划，再由你选择和确认工作目录。网页工具可以稍后准备。
+3. **开始第一个任务。** 输入想完成的事，或展开浏览器，打开需要处理的页面。
 
-需要 Node.js **22.12+**、npm、已登录的 Codex，以及有效的 HeroUI Pro 构建授权。
+<details>
+<summary>看看与 Athena 的第一次对话</summary>
 
-在仓库根目录运行：
+选择和实际结果会保留在连续对话中。你可以回看，也可以稍后设置；已有用户直接进入工作台，并能从设置重新打开引导。
+
+![Athena 首次引导实机画面](docs/screenshots/onboarding.png)
+
+</details>
+
+**当前版本：[0.7.0](https://github.com/Dylan-Nihilo/athena/releases/tag/v0.7.0)** · [ZIP 归档](https://github.com/Dylan-Nihilo/athena/releases/download/v0.7.0/Athena-0.7.0-mac-arm64.zip) · [SHA-256 校验](https://github.com/Dylan-Nihilo/athena/releases/download/v0.7.0/SHA256SUMS.txt) · [全部版本](https://github.com/Dylan-Nihilo/athena/releases)
+
+> 当前安装包采用 ad-hoc 签名，尚未做 Apple 公证，也没有自动更新。安装包不包含用户登录或 BrowserOS neo；引导会按需准备运行组件。
+
+## 使用之前
+
+- **任务执行由 Codex 提供。** 模型请求使用对应 CLI 账户的配额或计费；其他 CLI 的安装检测不代表已接入执行。
+- **网页功能需要 BrowserOS neo。** 使用独立的浏览器数据，不导入日常浏览器配置；普通 Chrome 不能替代它。
+- **费用展示为 API 等价估算。** 它不代表订阅实际扣费；未知或不完整的用量会保留其状态。
+- **已有数据继续保留。** 沿用原数据目录、钥匙串和工具协议。详见 [数据与凭据](docs/user-guide.md#数据与凭据)。
+
+桌面 Computer Use 仍处调研阶段。当前能力与验证范围见 [用户指南](docs/user-guide.md#能力与验证边界)。
+
+## 文档
+
+| 开始使用                                                    | 进一步了解                                                         |
+| ----------------------------------------------------------- | ------------------------------------------------------------------ |
+| [用户指南](docs/user-guide.md) · 安装、引导与日常使用       | [设计约定](DESIGN.md) · 视觉语言与组件映射                         |
+| [页面协作](docs/shared-workspace.md) · 邀请、权限与控制权   | [工程约定](AGENTS.md) · 开发与验证规则                             |
+| [飞书连接](docs/feishu-setup.md) · 配对与连接恢复           | [Computer Use 交接](docs/computer-use-handoff.md) · 实现与研究边界 |
+| [模型与用量](docs/agent-experience.md) · 执行证据与统计口径 | [更新日志](CHANGELOG.md) · 版本变化与下载                          |
+
+<details>
+<summary><strong>从源码开发</strong></summary>
+
+需要 Node.js **22.12+**、npm，以及有效的 HeroUI Pro 构建授权。
 
 ```bash
 npm ci
@@ -51,40 +92,19 @@ npm run setup:browseros
 npm run dev
 ```
 
-`npm ci` 会执行 `heroui:setup`，优先恢复完整的本机授权缓存。新环境需私下配置 `HEROUI_KEY`；不要把密钥或 Pro 构件提交到仓库。详见 [开发环境](docs/user-guide.md#开发环境与验证)。
-
-`setup:browseros` 下载并校验官方固定版本，默认放到相邻的 `../browseros-runtime/`，不启动浏览器或覆盖系统安装。
-
-常用检查与本机构建：
+`npm ci` 会执行 `heroui:setup`，优先恢复本机授权缓存。新环境需私下配置 `HEROUI_KEY`；不要提交密钥或完整 Pro 包。`setup:browseros` 下载并校验固定官方版本，不启动浏览器或覆盖系统安装。
 
 ```bash
 npm run typecheck
 npm test
 npm run build
-npm start
 npm run package
 ```
 
-`package` 构建本机应用目录，默认输出到 `release/`。模型实测、共享联调和分发验证的范围见 [用户指南](docs/user-guide.md#开发环境与验证)。
+运行任务还需已登录的 Codex。完整环境说明和测试范围见 [开发环境与验证](docs/user-guide.md#开发环境与验证)。
 
-前端修改先读 [DESIGN.md](DESIGN.md)；工程约定见 [AGENTS.md](AGENTS.md)。依赖版本以 [package.json](package.json) 与锁文件为准。
+</details>
 
-## 文档导航
+## 许可
 
-| 文档                                              | 内容                                           |
-| ------------------------------------------------- | ---------------------------------------------- |
-| [用户指南](docs/user-guide.md)                    | 初次配置、任务、网页预览、共享、数据与常见问题 |
-| [设计约定](DESIGN.md)                             | 视觉方向、HeroUI 组件映射、状态与交互          |
-| [Agent 交互与用量](docs/agent-experience.md)      | 模型执行证据、Token 口径与缺失数据             |
-| [共享工作区页面](docs/shared-workspace.md)        | 网络条件、参与者权限与控制权                   |
-| [飞书连接指南](docs/feishu-setup.md)              | 机器人创建、配对与连接恢复                     |
-| [Computer Use 交接](docs/computer-use-handoff.md) | 已实现的网页能力与桌面调研边界                 |
-| [第三方声明](THIRD_PARTY_NOTICES.md)              | 运行时、图标、组件来源与许可                   |
-
-## 数据与许可
-
-沿用 `app.agent.workbench` 与 `~/Library/Application Support/Agent Workbench/`，保留已有数据、钥匙串和工具协议标识。迁移与凭据范围见 [数据与凭据](docs/user-guide.md#数据与凭据)。
-
-本仓库公开可见，项目代码保持 **UNLICENSED**，尚未授予开源许可证。HeroUI Pro 是商业授权组件；其包、源码和授权密钥不作为本项目的公开源码分发。
-
-真实模型调用、网站兼容性和外部飞书联调均有各自的验证范围；应用截图与设计稿不能替代运行证据。
+本仓库公开可见，项目代码保持 **UNLICENSED**，尚未授予开源许可证。HeroUI Pro 是商业授权组件，其完整包、源码和密钥不随本仓库分发。第三方许可见 [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES.md)。
