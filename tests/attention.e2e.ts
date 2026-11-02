@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { _electron as electron, expect, type ElectronApplication } from '@playwright/test';
 import { access, chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { seedLegacyWorkspace } from './legacy-workspace-fixture';
 import type { AppSnapshot, PendingAgentRequest } from '../src/shared/types';
 
 const root = process.cwd();
@@ -14,6 +15,7 @@ await mkdir(path.join(root, 'test-results'), { recursive: true });
 const temporary = await mkdtemp(path.join(root, '.runtime/attention-test-'));
 const bin = path.join(temporary, 'bin');
 const dataDir = path.join(temporary, 'user-data');
+await seedLegacyWorkspace(dataDir);
 const protocolLog = path.join(temporary, 'protocol.jsonl');
 const resolveControl = path.join(temporary, 'resolve-request');
 await mkdir(bin, { recursive: true });

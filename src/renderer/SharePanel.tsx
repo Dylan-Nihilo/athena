@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Input, Modal } from '@heroui/react';
 import { ChoiceSelect } from './ChoiceSelect';
-import { Copy, Share2, Users } from 'lucide-react';
+import { Copy, Hand, Share2, Users } from 'lucide-react';
 import type { ShareState } from '../shared/share';
 import { ActionButton } from './ui';
 
@@ -52,7 +52,7 @@ export function SharePanel({
           ? `${pending} 人等待加入`
           : state?.active
             ? `共享中 · ${state.participants.length} 人`
-            : 'Share'}
+            : '共享'}
       </ActionButton>
       <Modal.Backdrop isOpen={open} onOpenChange={setOpen}>
         <Modal.Container size="lg">
@@ -122,6 +122,7 @@ export function SharePanel({
                             onFocus={(e) => e.target.select()}
                           />
                           <ActionButton
+                            className="primary-button"
                             aria-label="复制邀请链接"
                             onPress={async () => {
                               await onAction('app:copy', { text: state.invite!.url });
@@ -159,27 +160,39 @@ export function SharePanel({
                     <code>{state.fingerprint}</code>
                     <p>请通过你信任的渠道告知受邀者指纹。共享结束后，本次证书和链接失效。</p>
                   </details>
-                  <h3>参与者</h3>
+                  <div className="share-section-heading">
+                    <h3>参与者</h3>
+                    <span>{state.participants.length} 人</span>
+                  </div>
+                  <p className="share-permission-note">操作权限与当前控制权分别管理。</p>
                   <ul className="share-participants">
                     {state.participants.map((p) => (
-                      <li key={p.id}>
-                        <div>
-                          <strong>
-                            {p.name}
-                            {p.id === 'host' ? '（你）' : ''}
-                          </strong>
-                          <span>
-                            {p.role === 'host' ? '主持人' : `身份 ${p.id.slice(0, 8)}`} ·{' '}
-                            {p.status === 'pending'
-                              ? '等待确认'
-                              : p.status === 'connected'
-                                ? '已连接'
-                                : '已断开'}
-                            {state.controllerId === p.id ? ' · 正在操作' : ''}
+                      <li key={p.id} data-controller={state.controllerId === p.id}>
+                        <div className="share-member-identity">
+                          <span className="share-participant-avatar" aria-hidden="true">
+                            {p.name.slice(0, 1)}
                           </span>
-                          {p.requestedControl && (
-                            <span className="share-request">请求操作页面</span>
-                          )}
+                          <div>
+                            <strong>
+                              {p.name}
+                              {p.id === 'host' ? '（你）' : ''}
+                            </strong>
+                            <span>
+                              {p.role === 'host' ? '主持人' : `身份 ${p.id.slice(0, 8)}`} ·{' '}
+                              {p.status === 'pending'
+                                ? '等待确认'
+                                : p.status === 'connected'
+                                  ? '已连接'
+                                  : '已断开'}
+                              {state.controllerId === p.id ? ' · 正在操作' : ''}
+                            </span>
+                            {p.requestedControl && (
+                              <span className="share-request">
+                                <Hand size={13} />
+                                请求操作页面
+                              </span>
+                            )}
+                          </div>
                         </div>
                         {p.role !== 'host' && (
                           <div className="share-member-actions">

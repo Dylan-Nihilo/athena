@@ -4,8 +4,10 @@ import { _electron as electron, expect } from '@playwright/test';
 import { createServer } from 'node:http';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { seedLegacyWorkspace } from './legacy-workspace-fixture';
 const root = process.cwd();
 const dir = await mkdtemp(path.join(root, '.runtime/element-ui-'));
+await seedLegacyWorkspace(path.join(dir, 'data'));
 const site = createServer((req, res) => {
   res.setHeader('content-type', 'text/html;charset=utf-8');
   res.end(

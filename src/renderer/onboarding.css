@@ -1,0 +1,513 @@
+.app-workbench {
+  height: 100%;
+  min-height: 0;
+}
+
+.onboarding,
+.onboarding-loading {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: var(--surface);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+.onboarding {
+  --onboarding-topbar-height: 64px;
+  --onboarding-footer-height: 100px;
+  --onboarding-fade-height: clamp(56px, 10vh, 112px);
+  --onboarding-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.onboarding-loading {
+  display: grid;
+  place-items: center;
+  padding: 80px 24px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.onboarding-topbar {
+  display: flex;
+  flex: 0 0 var(--onboarding-topbar-height);
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+  padding: 0 28px 0 104px;
+  background: var(--surface);
+  z-index: 3;
+  -webkit-app-region: drag;
+}
+
+.onboarding-topbar :is(button, a) {
+  -webkit-app-region: no-drag;
+}
+
+.onboarding-topbar strong {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 22px;
+}
+
+.onboarding-topbar > span {
+  color: var(--secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.onboarding-scroll {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+  scroll-padding-block: calc(var(--onboarding-fade-height) + 16px) 32px;
+}
+
+.onboarding-scroll:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.onboarding-transcript {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 40px;
+  width: min(760px, calc(100% - 48px));
+  min-height: 100%;
+  margin-inline: auto;
+  padding-top: clamp(96px, calc(29.6vh - var(--onboarding-topbar-height)), 232px);
+  padding-bottom: 96px;
+}
+
+.onboarding-message {
+  flex: none;
+  min-width: 0;
+  margin: 0;
+  scroll-margin-block: calc(var(--onboarding-fade-height) + 16px) 32px;
+}
+
+.onboarding-message.assistant {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+}
+
+.onboarding-message-heading {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  min-width: 0;
+  min-height: 56px;
+}
+
+.onboarding-message-heading > img {
+  display: block;
+  flex: 0 0 56px;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  object-fit: cover;
+}
+
+.onboarding-message-heading :is(h1, h2) {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 36px;
+  font-weight: 700;
+  line-height: 48px;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
+.onboarding-message-heading :is(h1, h2):focus {
+  outline: none;
+}
+
+.onboarding-message-body {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 24px;
+  min-width: 0;
+  padding-inline-start: 80px;
+  color: var(--secondary);
+  font-size: 15px;
+  line-height: 26px;
+}
+
+.onboarding-message-body :where(p) {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.onboarding-welcome-line {
+  display: block;
+}
+
+.onboarding-message.user {
+  align-self: flex-end;
+  width: fit-content;
+  max-width: calc(100% - 80px);
+  padding: 10px 16px;
+  border-radius: 24px;
+  background: var(--surface-secondary);
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.onboarding-message.user :where(p) {
+  margin: 0;
+}
+
+.onboarding-status-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.onboarding-status-card {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-panel);
+  background: var(--surface-secondary);
+  box-shadow: none;
+}
+
+.onboarding-status-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  min-height: 78px;
+  padding: 16px;
+}
+
+.onboarding-status-icon {
+  display: grid;
+  flex: 0 0 22px;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  color: var(--secondary);
+}
+
+.onboarding-status-icon > img {
+  display: block;
+  flex: none;
+  max-width: none;
+}
+
+:is(.dark, [data-theme='dark']) .onboarding-status-icon > img {
+  filter: invert(1);
+}
+
+.onboarding-status-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.onboarding-status-copy strong {
+  color: var(--foreground);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 22px;
+  overflow-wrap: anywhere;
+}
+
+.onboarding-status-copy span,
+.onboarding-status-label {
+  color: var(--secondary);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.onboarding-status-label {
+  flex: none;
+  max-width: 25%;
+  text-align: end;
+}
+
+.onboarding-plan-details {
+  display: grid;
+  grid-template-columns: minmax(72px, auto) minmax(0, 1fr);
+  gap: 10px 16px;
+  min-width: 0;
+  margin: 0;
+  padding: 16px;
+  border-radius: var(--radius-control);
+  background: var(--surface-secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.onboarding-plan-details :is(dt, dd) {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.onboarding-plan-details dt {
+  color: var(--muted);
+}
+
+.onboarding-plan-details dd {
+  color: var(--foreground);
+}
+
+.onboarding-plan-details a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.onboarding-message-body .onboarding-note {
+  color: var(--secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.onboarding-error {
+  padding: 12px 16px;
+  border-radius: var(--radius-control);
+  background: var(--danger-soft);
+  color: var(--danger-soft-foreground);
+  font-size: 13px;
+  line-height: 22px;
+  overflow-wrap: anywhere;
+}
+
+.onboarding-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.onboarding :is(.onboarding-actions, .onboarding-footer) .button {
+  min-height: 44px;
+  height: auto;
+  max-width: 100%;
+  padding: 12px 20px;
+  border-radius: var(--radius-button);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  white-space: normal;
+}
+
+.onboarding-footer {
+  display: flex;
+  flex: 0 0 var(--onboarding-footer-height);
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  width: min(760px, calc(100% - 48px));
+  min-width: 0;
+  margin-inline: auto;
+  padding-inline-start: 80px;
+  padding-bottom: 56px;
+  background: var(--surface);
+  z-index: 3;
+}
+
+.onboarding-progress {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 24px;
+  min-width: 0;
+  margin: 0;
+  padding: 12px 0;
+  list-style: none;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.onboarding-progress [data-active='true'] {
+  color: var(--foreground);
+}
+
+.onboarding-progress [data-complete='true'] {
+  color: var(--secondary);
+}
+
+.onboarding-history-fade {
+  position: absolute;
+  top: var(--onboarding-topbar-height);
+  inset-inline: 0;
+  z-index: 2;
+  height: var(--onboarding-fade-height);
+  opacity: 0;
+  background: linear-gradient(to bottom, var(--surface), transparent);
+  backdrop-filter: blur(8px);
+  mask-image: linear-gradient(to bottom, #000, transparent);
+  pointer-events: none;
+}
+
+.onboarding[data-scrolled='true'] .onboarding-history-fade {
+  opacity: 1;
+}
+
+.onboarding .onboarding-jump-latest {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--onboarding-footer-height) + 16px);
+  z-index: 4;
+  translate: -50% 0;
+  max-width: calc(100% - 32px);
+  min-height: 40px;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: var(--radius-button);
+  background: var(--surface);
+  color: var(--foreground);
+  box-shadow: var(--surface-shadow);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+@keyframes onboarding-welcome-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes onboarding-welcome-opacity {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.onboarding[data-animate-welcome='true'] .is-welcome .onboarding-message-heading {
+  animation: onboarding-welcome-rise 440ms var(--onboarding-ease) both;
+}
+
+.onboarding[data-animate-welcome='true'] .is-welcome .onboarding-welcome-line {
+  animation: onboarding-welcome-rise 292ms var(--onboarding-ease) 230ms both;
+}
+
+.onboarding[data-animate-welcome='true'] .is-welcome .onboarding-welcome-line:nth-child(n + 2) {
+  animation-delay: 317ms;
+}
+
+.onboarding[data-animate-welcome='true'] .is-welcome .onboarding-actions {
+  animation: onboarding-welcome-rise 280ms var(--onboarding-ease) 440ms both;
+}
+
+.onboarding[data-animate-welcome='true'] .onboarding-footer {
+  animation: onboarding-welcome-opacity 200ms var(--onboarding-ease) 540ms both;
+}
+
+.onboarding[data-animate-welcome='true'] .is-welcome .onboarding-actions:focus-within {
+  animation: none;
+  opacity: 1;
+  transform: none;
+}
+
+@media (max-height: 760px) {
+  .onboarding {
+    --onboarding-footer-height: 68px;
+  }
+
+  .onboarding-footer {
+    padding-bottom: 24px;
+  }
+}
+
+@media (max-width: 680px) {
+  .onboarding-message-heading {
+    gap: 16px;
+  }
+
+  .onboarding-message-heading :is(h1, h2) {
+    font-size: 28px;
+    line-height: 40px;
+  }
+
+  .onboarding-message-body,
+  .onboarding-footer {
+    padding-inline-start: 0;
+  }
+
+  .onboarding-message.user {
+    max-width: calc(100% - 40px);
+  }
+
+  .onboarding-progress {
+    column-gap: 12px;
+  }
+
+  .onboarding-plan-details {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 4px;
+  }
+
+  .onboarding-plan-details dd + dt {
+    margin-top: 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-scroll {
+    scroll-behavior: auto;
+  }
+
+  .onboarding[data-animate-welcome='true']
+    .is-welcome
+    :is(.onboarding-message-heading, .onboarding-welcome-line, .onboarding-actions),
+  .onboarding[data-animate-welcome='true'] .onboarding-footer {
+    animation-name: onboarding-welcome-opacity;
+    animation-duration: 80ms;
+    animation-delay: 0ms;
+    animation-timing-function: linear;
+  }
+
+  .onboarding[data-animate-welcome='true'] .is-welcome .onboarding-welcome-line:nth-child(n + 2) {
+    animation-delay: 0ms;
+  }
+
+  .onboarding .spin {
+    animation: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .onboarding-history-fade {
+    display: none;
+  }
+}

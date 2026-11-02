@@ -4,12 +4,14 @@ import { _electron as electron, expect } from '@playwright/test';
 import { createServer } from 'node:http';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { seedLegacyWorkspace } from './legacy-workspace-fixture';
 import { CdpConnection } from '../src/main/browser-cdp';
 
 const root = process.cwd();
 const output = process.env.ATHENA_PERF_OUTPUT || 'test-results/neo-performance/interactions.json';
 const urlSync = process.env.ATHENA_PERF_URL_INPUT === '1';
 const temp = await mkdtemp(path.join(root, '.runtime/neo-interactions-'));
+await seedLegacyWorkspace(path.join(temp, 'data'));
 const site = createServer((req, res) => {
   const dense = req.url?.includes('dense');
   res.setHeader('content-type', 'text/html;charset=utf-8');

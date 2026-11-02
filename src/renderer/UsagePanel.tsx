@@ -213,13 +213,22 @@ export function UsagePanel() {
                 {total.cost.known} / {records.length} 项已估算{costIncomplete ? ' · 部分数据' : ''}
               </p>
               <p className="usage-billing-note">按 API 公开单价换算，不代表订阅实际扣费。</p>
-              <div className="usage-cost usage-token-total">
-                <span>已记录 Token</span>
-                <strong data-testid="usage-total">{format(total.amounts.totalTokens.value)}</strong>
-                <p>
-                  {records.length} 项任务{incomplete ? ' · 部分记录不完整' : ''}
-                </p>
-              </div>
+            </div>
+            <div className="usage-main-metric usage-secondary-metric usage-token-total">
+              <span>已记录 Token</span>
+              <strong data-testid="usage-total">{format(total.amounts.totalTokens.value)}</strong>
+              <p>
+                {records.length} 项任务{incomplete ? ' · 部分记录不完整' : ''}
+              </p>
+            </div>
+            <div className="usage-main-metric usage-secondary-metric usage-io-total">
+              <span>输入 / 输出 Token</span>
+              <strong>
+                <Amount amount={total.amounts.inputTokens} />
+                <span className="usage-metric-divider"> / </span>
+                <Amount amount={total.amounts.outputTokens} />
+              </strong>
+              <p>仅含已采集值，缺失字段保留为未知。</p>
             </div>
             <div className="usage-chart">
               <div className="usage-section-heading">

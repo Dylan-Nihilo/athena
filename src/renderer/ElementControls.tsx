@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { AlignCenter, AlignJustify, AlignLeft, AlignRight, Blend, Frame, Type } from 'lucide-react';
+import { AlignCenter, AlignJustify, AlignLeft, AlignRight, Paintbrush, Ruler } from 'lucide-react';
 import {
   BorderStyleSample,
   ChoiceControl,
@@ -62,7 +62,9 @@ const Group = createComponentImplementation(
   ({ props, buildChild }) => (
     <PropertySection
       label={props.label}
-      icon={props.label === '排版' ? <Type /> : props.label === '外观' ? <Blend /> : <Frame />}
+      icon={
+        props.label === '排版' ? <AlignLeft /> : props.label === '外观' ? <Paintbrush /> : <Ruler />
+      }
     >
       {(props.children as string[]).map((id) => (
         <div key={id}>{buildChild(id)}</div>

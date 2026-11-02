@@ -5,6 +5,7 @@ import { ActionButton } from './ui';
 import { ElementInspector } from './ElementInspector';
 import { SharedSurface } from './SharedSurface';
 import { ShareConnection } from './share-connection';
+import athenaLogo from './assets/brand/athena-profile.png';
 import type { BrowserFrame, BrowserState, RecordedStep } from '../shared/types';
 import type { ShareState } from '../shared/share';
 
@@ -91,6 +92,7 @@ export default function SharedPage() {
   }, []);
   const me = state?.participants.find((p) => p.id === connection?.participantId);
   const controller = state?.participants.find((p) => p.id === state.controllerId);
+  const host = state?.participants.find((p) => p.role === 'host');
   const approved = me?.status === 'connected';
   const controlling = Boolean(
     approved &&
@@ -100,10 +102,15 @@ export default function SharedPage() {
     state?.controllerId === me?.id,
   );
   return (
-    <main className="shared-app">
+    <main className="shared-app" data-role={me?.role || 'pending'}>
       <header className="shared-header">
-        <strong>Athena</strong>
-        <span>共享页面</span>
+        <div className="shared-brand">
+          <img src={athenaLogo} alt="" />
+          <strong>Athena</strong>
+        </div>
+        <span className="shared-role">
+          {ended ? '已结束' : approved ? (me?.role === 'editor' ? '可操作' : '仅查看') : '共享页面'}
+        </span>
         <span className="shared-connection" role="status">
           {status}
         </span>
@@ -172,6 +179,10 @@ export default function SharedPage() {
         </section>
       ) : (
         <>
+          <section className="shared-page-heading">
+            <h1>{browser?.title || state?.title || '共享页面'}</h1>
+            <p>{ended ? '本次共享已结束' : `${host?.name || '主持人'} 正在共享此页面`}</p>
+          </section>
           <div className="shared-toolbar">
             <div className="shared-presence">
               <Users size={15} />
@@ -181,7 +192,8 @@ export default function SharedPage() {
                   .join(' · ')}
               </span>
             </div>
-            <span>
+            <span className="shared-controller" role="status">
+              <MousePointer2 size={15} />
               {ended
                 ? '本次共享已结束'
                 : state?.changingControl
@@ -192,7 +204,7 @@ export default function SharedPage() {
             </span>
             {!ended && me?.role === 'editor' && (
               <ActionButton
-                className="secondary-button"
+                className="primary-button shared-control-action"
                 isDisabled={state?.changingControl || me.requestedControl}
                 onPress={() =>
                   void action(controlling ? 'share:release-control' : 'share:request-control')
@@ -204,6 +216,11 @@ export default function SharedPage() {
             <ActionButton onPress={() => setHistory((v) => !v)}>
               {history ? '返回页面' : `操作记录 · ${steps.length}`}
             </ActionButton>
+            {!ended && me?.role === 'viewer' && (
+              <p className="shared-readonly-note">
+                你以只读方式加入。操作页面需主持人授予权限并交接控制权。
+              </p>
+            )}
           </div>
           {error && (
             <div className="shared-error" role="alert">
@@ -313,6 +330,32 @@ export default function SharedPage() {
                   </aside>
                 )}
               </div>
+              <section className="shared-recent-activity" aria-label="最近操作">
+                <h2>最近操作</h2>
+                {steps.length ? (
+                  <ol>
+                    {steps
+                      .slice(-3)
+                      .reverse()
+                      .map((step) => (
+                        <li key={step.id}>
+                          <span>
+                            {step.actor?.name || (step.source === 'agent' ? 'Agent' : '参与者')} ·{' '}
+                            {step.description}
+                          </span>
+                          <time>
+                            {new Date(step.timestamp).toLocaleTimeString('zh-CN', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </time>
+                        </li>
+                      ))}
+                  </ol>
+                ) : (
+                  <p>还没有页面操作。</p>
+                )}
+              </section>
             </>
           )}
         </>

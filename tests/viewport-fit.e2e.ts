@@ -5,6 +5,7 @@ import { _electron as electron, expect } from '@playwright/test';
 import { createServer } from 'node:http';
 import { access, chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { seedLegacyWorkspace } from './legacy-workspace-fixture';
 import type { AppSnapshot, ElementQueryResult } from '../src/shared/types';
 
 const root = process.cwd();
@@ -16,6 +17,7 @@ await access(path.join(appRoot, 'resources/demo.html'));
 await mkdir(path.join(root, '.runtime'), { recursive: true });
 await mkdir(evidence, { recursive: true });
 const temporary = await mkdtemp(path.join(root, '.runtime/viewport-ui-'));
+await seedLegacyWorkspace(path.join(temporary, 'data'));
 const bin = path.join(temporary, 'bin');
 await mkdir(bin);
 for (const name of ['codex', 'claude', 'opencode', 'gemini']) {

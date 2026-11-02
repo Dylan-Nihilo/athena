@@ -4,6 +4,7 @@ import { _electron as electron, expect } from '@playwright/test';
 import { createServer } from 'node:http';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { seedLegacyWorkspace } from './legacy-workspace-fixture';
 import { CdpConnection } from '../src/main/browser-cdp';
 
 const root = process.cwd();
@@ -13,6 +14,7 @@ const flowSelection = process.env.ATHENA_PERF_FLOW === '1';
 const packaged = process.env.ATHENA_PERF_APP;
 const output = process.env.ATHENA_PERF_OUTPUT || 'test-results/browser-scroll-performance.json';
 const temp = await mkdtemp(path.join(root, '.runtime/scroll-perf-'));
+await seedLegacyWorkspace(path.join(temp, 'data'));
 const site = createServer((_req, res) => {
   res.setHeader('content-type', 'text/html;charset=utf-8');
   res.end(`<!doctype html><meta charset="utf-8"><title>滚动性能验证</title><style>

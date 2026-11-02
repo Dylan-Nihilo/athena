@@ -1,5 +1,25 @@
 # 更新日志
 
+## 0.7.0 · 2026-11-02
+
+- 新增沉浸式首次引导：选择与结果保留为连续对话，内容向上推进，顶部渐变模糊；可回看、稍后设置和从设置继续准备。
+- 引导接入真实 Codex 检测、官方完整包私有安装、登录与取消、工作目录确认和可选 BrowserOS 准备；旧用户不强制重做，安装与登录结果重新核对后才推进。
+- 应用界面采用白底黑灰、柔和表面与统一圆角；首页、侧栏、任务输入、设置、用量、执行记录、页面共享和元素检查器保持一致的视觉语言。
+- 首页加入本机用户名与首字母头像、用户菜单、网页上下文菜单，以及浅色、深色和跟随系统外观。
+- 新增当前工作区的对话标题与消息搜索，支持 `⌘K`、方向键、Enter 和 Escape；网页获得焦点时不会同时收到搜索快捷键。
+- 设置改为独立工作面，保留真实 Codex、BrowserOS neo 和飞书连接状态；保留模型、审批、草稿、停止与用量数据的既有行为。
+- 修复空对话与元素编辑之间的切换、深色字段焦点、共享表单焦点与检查器布局细节。
+- 精简 README，补充用户指南、AGENTS.md 工程约定和 DESIGN.md 设计规范；保留原有数据目录、钥匙串与工具协议。
+
+直接下载（macOS Apple Silicon）：
+
+- [DMG 安装包](https://github.com/Dylan-Nihilo/athena/releases/download/v0.7.0/Athena-0.7.0-mac-arm64.dmg)
+- [ZIP 归档](https://github.com/Dylan-Nihilo/athena/releases/download/v0.7.0/Athena-0.7.0-mac-arm64.zip)
+- [SHA-256 校验文件](https://github.com/Dylan-Nihilo/athena/releases/download/v0.7.0/SHA256SUMS.txt)
+- [Release 页面](https://github.com/Dylan-Nihilo/athena/releases/tag/v0.7.0)
+
+安装包采用 ad-hoc 签名，未做 Developer ID 分发签名或 Apple 公证，尚无自动更新。Codex CLI 和 BrowserOS neo 可在首次引导中按需准备，登录由用户在官方流程中完成；安装包不包含用户登录、聊天或凭据。
+
 ## 0.6.1 · 2026-11-01
 
 - 接入独立元素控件库：专用数值滑轨、精确数值输入、颜色编辑、四边内边距、文字对齐和边框样式；保留预览撤销与共享者的独立编辑记录。

@@ -407,7 +407,7 @@ export function BrowserPane({
     )
       return;
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'v') return;
-    if ((event.metaKey || event.ctrlKey) && ['l', 't', 'w'].includes(event.key.toLowerCase()))
+    if ((event.metaKey || event.ctrlKey) && ['k', 'l', 't', 'w'].includes(event.key.toLowerCase()))
       return;
     if (event.key === 'Tab' && event.shiftKey && event.ctrlKey) return;
     event.preventDefault();

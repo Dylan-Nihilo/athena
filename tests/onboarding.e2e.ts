@@ -1,0 +1,215 @@
+/** Native onboarding integration: real CLI/readiness and filesystem, controlled directory picker; no model or login requests. */
+import assert from 'node:assert/strict';
+import {
+  _electron as electron,
+  expect,
+  type ElectronApplication,
+  type Page,
+} from '@playwright/test';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
+import type { AppSnapshot } from '../src/shared/types';
+
+const root = process.cwd();
+const directory = await mkdtemp(path.join(root, '.runtime/onboarding-native-'));
+const profile = path.join(directory, 'new-profile');
+const workspace = path.join(directory, 'project');
+const output = path.join(root, 'test-results/onboarding-native');
+await mkdir(workspace, { recursive: true });
+await mkdir(output, { recursive: true });
+const errors: string[] = [];
+const checks: string[] = [];
+let app: ElectronApplication | undefined;
+let page: Page;
+const executable = process.env.ATHENA_TEST_APP;
+async function launch(data: string) {
+  app = await electron.launch({
+    ...(executable ? { executablePath: executable } : {}),
+    args: executable ? [] : ['.'],
+    cwd: root,
+    env: {
+      ...process.env,
+      WORKBENCH_USER_DATA_DIR: data,
+      WORKBENCH_BROWSER_PATH: path.resolve(
+        '../browseros-runtime/BrowserOS neo.app/Contents/MacOS/BrowserOS neo',
+      ),
+    },
+  });
+  page = await app.firstWindow();
+  await page.evaluate('window.__name = (fn) => fn');
+  page.on('pageerror', (error) => errors.push(error.message));
+  await app.evaluate(({ BrowserWindow }) => {
+    const window = BrowserWindow.getAllWindows()[0];
+    window.webContents.setBackgroundThrottling(false);
+    window.hide();
+  });
+}
+const snapshot = () => page.evaluate(() => window.workbench.invoke<AppSnapshot>('app:snapshot'));
+async function close() {
+  await app?.close();
+  app = undefined;
+}
+try {
+  await launch(profile);
+  await expect(page!.locator('.onboarding')).toBeVisible();
+  await expect(
+    page!.getByRole('heading', { name: '你好，我是 Athena。', exact: true }),
+  ).toBeVisible();
+  assert.equal((await snapshot()).conversations.length, 0);
+  await page!.screenshot({ path: path.join(output, 'welcome.png'), animations: 'disabled' });
+  await close();
+  await launch(profile);
+  await expect(page!.locator('.onboarding')).toBeVisible();
+  assert.equal((await snapshot()).conversations.length, 0);
+  checks.push(
+    'An unconfigured profile opens the local greeting; closing before interaction and reopening retains onboarding without inventing conversation history',
+  );
+
+  await page!.getByRole('button', { name: '你好，Athena', exact: true }).click();
+  await page!.getByRole('button', { name: '检查本机 Codex', exact: true }).click();
+  await expect
+    .poll(async () => (await snapshot()).onboarding?.codex.status, { timeout: 20000 })
+    .toBe('ready');
+  await expect
+    .poll(async () => (await snapshot()).onboarding?.codex.authentication, { timeout: 20000 })
+    .toBe('ready');
+  await expect(page!.locator('.onboarding .is-current')).toHaveAttribute(
+    'data-screen',
+    /connected|folder/,
+  );
+  const useConnection = page!.getByRole('button', { name: '使用这个连接', exact: true });
+  if (await useConnection.isVisible()) await useConnection.click();
+  const before = (await snapshot()).settings.workspace;
+  await app!.evaluate(({ dialog }, selected) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [selected] });
+  }, workspace);
+  await page!.getByRole('button', { name: '选择文件夹', exact: true }).click();
+  await expect
+    .poll(async () => (await snapshot()).onboarding?.workspace.candidate?.path)
+    .toBe(workspace);
+  assert.equal(
+    (await snapshot()).settings.workspace,
+    before,
+    'Choosing a candidate must not commit it',
+  );
+  await page!.getByRole('button', { name: '使用这个目录', exact: true }).click();
+  await expect.poll(async () => (await snapshot()).onboarding?.workspace.status).toBe('ready');
+  assert.equal((await snapshot()).settings.workspace, workspace);
+  assert.equal((await snapshot()).onboarding?.coreReady, true);
+  checks.push(
+    'The installed Codex is probed without a model request; a real writable directory is committed only after candidate confirmation',
+  );
+
+  await page!.getByRole('button', { name: '准备浏览器', exact: true }).click();
+  await expect
+    .poll(async () => (await snapshot()).onboarding?.browser.status, { timeout: 150000 })
+    .toBe('ready');
+  await expect.poll(async () => (await snapshot()).neo?.status, { timeout: 150000 }).toBe('ready');
+  await page!.screenshot({ path: path.join(output, 'ready.png'), animations: 'disabled' });
+  await page!.getByRole('button', { name: '开始吧', exact: true }).click();
+  await expect(page!.locator('.onboarding')).toHaveCount(0);
+  const composer = page!.getByRole('textbox', { name: '发送给 Agent 的任务' });
+  await composer.fill('这是一份尚未发送的草稿');
+  const conversationsBefore = (await snapshot()).conversations.map((item) => item.id);
+  await page!.locator('.sidebar-settings').click();
+  await page!.getByRole('button', { name: '重新查看引导', exact: true }).click();
+  await expect(page!.locator('.onboarding')).toBeVisible();
+  await page!.getByRole('button', { name: '稍后设置', exact: true }).click();
+  await expect(page!.locator('.onboarding')).toHaveCount(0);
+  await page!.getByRole('button', { name: '返回对话', exact: true }).click();
+  await expect(composer).toHaveValue('这是一份尚未发送的草稿');
+  assert.deepEqual(
+    (await snapshot()).conversations.map((item) => item.id),
+    conversationsBefore,
+  );
+  checks.push(
+    'Existing BrowserOS and Neo become ready; returning from reopened setup preserves the draft and conversation IDs',
+  );
+  await close();
+  await launch(profile);
+  await expect(page!.getByRole('textbox', { name: '发送给 Agent 的任务' })).toBeVisible();
+  await expect(page!.locator('.onboarding')).toHaveCount(0);
+  checks.push('A completed or deliberately deferred profile does not reopen setup on restart');
+  await close();
+
+  await launch(path.join(directory, 'browser-deferred-profile'));
+  await page!.getByRole('button', { name: '你好，Athena', exact: true }).click();
+  await page!.getByRole('button', { name: '检查本机 Codex', exact: true }).click();
+  await page!.getByRole('button', { name: '使用这个连接', exact: true }).click();
+  await app!.evaluate(({ dialog }, selected) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [selected] });
+  }, workspace);
+  await page!.getByRole('button', { name: '选择文件夹', exact: true }).click();
+  await page!.getByRole('button', { name: '使用这个目录', exact: true }).click();
+  await page!.getByRole('button', { name: '以后再说', exact: true }).click();
+  await expect(page!.locator('.onboarding .is-current')).toHaveAttribute(
+    'data-screen',
+    'readyWithoutBrowser',
+  );
+  await page!.getByRole('button', { name: '开始吧', exact: true }).click();
+  await expect(page!.locator('.onboarding')).toHaveCount(0);
+  await expect
+    .poll(async () => (await snapshot()).codexConnection?.status, { timeout: 60000 })
+    .toBe('ready');
+  assert.equal((await snapshot()).browser.status, 'missing');
+  assert.equal((await snapshot()).neo?.status, 'stopped');
+  assert.equal((await snapshot()).onboarding?.browser.status, 'deferred');
+  checks.push(
+    'Skipping the optional browser reaches a truthful ready state and prepares the real Codex connection without starting BrowserOS or Neo',
+  );
+  await close();
+
+  const legacyProfile = path.join(directory, 'legacy-profile');
+  await mkdir(legacyProfile);
+  await writeFile(
+    path.join(legacyProfile, 'workspace.json'),
+    JSON.stringify({
+      settings: { workspace, agent: 'codex' },
+      conversations: [
+        {
+          id: 'legacy-conversation',
+          title: '已有项目对话',
+          workspace,
+          updatedAt: Date.now(),
+          messages: [],
+        },
+      ],
+      recordings: [],
+    }),
+  );
+  await launch(legacyProfile);
+  await expect(page!.getByRole('textbox', { name: '发送给 Agent 的任务' })).toBeVisible();
+  await expect(page!.locator('.onboarding')).toHaveCount(0);
+  assert.equal((await snapshot()).onboarding?.status, 'legacy');
+  await page!.locator('.sidebar-settings').click();
+  await page!.getByRole('button', { name: '重新查看引导', exact: true }).click();
+  await expect(page!.locator('.onboarding')).toBeVisible();
+  await page!.getByRole('button', { name: '稍后设置', exact: true }).click();
+  await expect(page!.locator('.onboarding')).toHaveCount(0);
+  assert.ok((await snapshot()).conversations.some((item) => item.id === 'legacy-conversation'));
+  const saved = JSON.parse(await readFile(path.join(legacyProfile, 'workspace.json'), 'utf8'));
+  assert.equal(saved.settings.workspace, workspace);
+  checks.push(
+    'A legacy workspace without an onboarding marker enters the existing app and can open/leave setup without losing its records',
+  );
+  assert.deepEqual(errors, []);
+  const report = {
+    passed: true,
+    source: executable ? 'packaged-Electron' : 'Electron-build',
+    realCodexProbe: true,
+    realBrowserOS: true,
+    directoryPicker: 'controlled result with real filesystem checks',
+    realModelCalls: 0,
+    realLoginAttempts: 0,
+    realMessagesSent: 0,
+    checks,
+    errors,
+  };
+  await writeFile(path.join(output, 'verification.json'), JSON.stringify(report, null, 2));
+  console.log(JSON.stringify(report));
+} catch (error) {
+  if (app) await page!.screenshot({ path: path.join(output, 'failure.png') }).catch(() => {});
+  throw error;
+} finally {
+  await close();
+}

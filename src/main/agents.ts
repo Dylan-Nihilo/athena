@@ -70,7 +70,7 @@ async function findExecutable(name: string, directories: string[]): Promise<stri
   }
 }
 
-function cliEnvironment(executable: string): NodeJS.ProcessEnv {
+export function cliEnvironment(executable: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     PATH: `${path.dirname(executable)}${path.delimiter}${process.env.PATH ?? '/usr/bin:/bin'}`,
@@ -82,11 +82,19 @@ function cliEnvironment(executable: string): NodeJS.ProcessEnv {
   return env;
 }
 
-export async function detectAgents(): Promise<AgentInfo[]> {
+export async function detectAgents(codexFallback?: string): Promise<AgentInfo[]> {
   const directories = await executableDirectories();
   return Promise.all(
     AGENTS.map(async ([id, name]) => {
-      const executable = await findExecutable(id, directories);
+      let executable = await findExecutable(id, directories);
+      if (!executable && id === 'codex' && codexFallback) {
+        try {
+          await access(codexFallback, constants.X_OK);
+          if ((await stat(codexFallback)).isFile()) executable = codexFallback;
+        } catch {
+          /* An application-private Codex is optional. */
+        }
+      }
       if (!executable)
         return { id, name, available: false, supported: id === 'codex', detail: '未找到本机 CLI' };
       const info: AgentInfo = {
@@ -136,6 +144,37 @@ export async function detectAgents(): Promise<AgentInfo[]> {
               ? '使用本机 Codex 的既有登录'
               : '暂时无法确认登录状态；可在终端检查 codex login status';
       } else if (info.available) info.detail = '已检测到；当前版本仅接通 Codex';
+      if (id === 'codex' && !info.available && codexFallback && executable !== codexFallback) {
+        try {
+          await access(codexFallback, constants.X_OK);
+          const fallback = await execFileAsync(codexFallback, ['--version'], {
+            ...probeOptions,
+            env: cliEnvironment(codexFallback),
+          });
+          const login = await execFileAsync(codexFallback, ['login', 'status'], {
+            ...probeOptions,
+            env: cliEnvironment(codexFallback),
+          }).then(
+            (output) => ({ successful: true, ...output }),
+            (error: { stdout?: string; stderr?: string }) => ({ successful: false, ...error }),
+          );
+          const status = `${login.stdout ?? ''}\n${login.stderr ?? ''}`;
+          return {
+            ...info,
+            available: true,
+            path: codexFallback,
+            version: fallback.stdout.trim().split('\n')[0]?.slice(0, 120),
+            authentication: /not logged in|not authenticated/i.test(status)
+              ? 'missing'
+              : login.successful && /logged in/i.test(status)
+                ? 'ready'
+                : 'unknown',
+            detail: '使用 Athena 私有安装的 Codex，保留本机已有登录与配置',
+          } satisfies AgentInfo;
+        } catch {
+          /* Preserve the original diagnostic when the fallback is also unavailable. */
+        }
+      }
       return info;
     }),
   );

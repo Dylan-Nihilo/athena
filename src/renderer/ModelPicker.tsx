@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Button, Label, Popover, Slider } from '@heroui/react';
-import { ChevronDown, RefreshCw, RotateCcw, X } from 'lucide-react';
+import { ChevronDown, RotateCw, RotateCcw, X } from 'lucide-react';
 import { ChoiceSelect } from './ChoiceSelect';
 import type { Settings } from '../shared/types';
 import type { ModelOption, ModelSelection } from '../shared/usage';
@@ -117,7 +117,7 @@ export function ModelPicker({
                 isDisabled={loading || saving}
                 onPress={() => void refresh(true)}
               >
-                <RefreshCw size={14} className={loading ? 'is-refreshing' : ''} />
+                <RotateCw size={16} className={loading ? 'is-refreshing' : ''} />
               </Button>
               <Button
                 variant="ghost"
@@ -126,7 +126,7 @@ export function ModelPicker({
                 aria-label="关闭模型选择"
                 onPress={() => setOpen(false)}
               >
-                <X size={14} />
+                <X size={16} />
               </Button>
             </div>
           </div>

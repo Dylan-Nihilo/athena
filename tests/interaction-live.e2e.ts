@@ -4,12 +4,14 @@ import { _electron as electron, expect } from '@playwright/test';
 import { createServer } from 'node:http';
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import path from 'node:path';
+import { seedLegacyWorkspace } from './legacy-workspace-fixture';
 import { CdpConnection } from '../src/main/browser-cdp';
 import type { AppSnapshot, ChatMessage } from '../src/shared/types';
 import type { ModelOption, UsageSnapshot } from '../src/shared/usage';
 
 const root = process.cwd();
 const dir = await mkdtemp(path.resolve('.runtime/interaction-live-'));
+await seedLegacyWorkspace(dir);
 const out = process.env.ATHENA_LIVE_OUTPUT || 'test-results/interaction-refinement/live';
 await mkdir(out, { recursive: true });
 let released = false;

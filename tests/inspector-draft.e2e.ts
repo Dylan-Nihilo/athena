@@ -73,7 +73,9 @@ window.workbench = {
 const onAction = async action => {
   if (action !== 'browser:element-details') throw new Error('Unexpected fixture action');
   fixture.initialReads++;
-  return structuredClone(details);
+  return fixture.initialReads === 1
+    ? structuredClone(details)
+    : window.workbench.invoke(action);
 };
 createRoot(document.getElementById('root')).render(createElement(ElementInspector, {
   selected: details, tabId: details.tabId, previews: [], onAction,

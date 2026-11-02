@@ -9,12 +9,14 @@ import {
 } from '@playwright/test';
 import { mkdtemp, mkdir, readFile, writeFile, rm, copyFile } from 'node:fs/promises';
 import path from 'node:path';
+import { seedLegacyWorkspace } from './legacy-workspace-fixture';
 import { complexWorkflowFixture } from './complex-workflow-fixture';
 import { summarizeUsage, type ModelOption, type UsageSnapshot } from '../src/shared/usage';
 import type { AppSnapshot, ChatMessage } from '../src/shared/types';
 
 const root = process.cwd();
 const directory = await mkdtemp(path.resolve('.runtime/agent-experience-'));
+await seedLegacyWorkspace(path.join(directory, 'data'));
 const output = path.resolve(
   process.env.ATHENA_EXPERIENCE_OUTPUT || 'test-results/agent-experience/packaged',
 );

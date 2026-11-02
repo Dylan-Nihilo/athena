@@ -1,4 +1,5 @@
 import { Tabs } from '@heroui/react';
+import './inspector-surface.css';
 import {
   InspectorInput,
   InspectorSelect,
@@ -14,7 +15,7 @@ import {
   ChevronRight,
   Loader2,
   Scan,
-  ScanLine,
+  SquareDashedMousePointer,
   Search,
   Undo2,
   X,
@@ -283,7 +284,7 @@ export function ElementInspector({
     <section className="element-inspector" aria-label="元素检查器" hidden={hidden}>
       <header className="inspector-heading">
         <span className="inspector-mark" aria-hidden>
-          <ScanLine size={20} />
+          <SquareDashedMousePointer size={18} />
         </span>
         <div className="inspector-target-summary">
           <strong title={details?.name}>{details?.name || '选择一个元素'}</strong>
@@ -415,7 +416,7 @@ export function ElementInspector({
             <span>{details.tag}</span>
           </div>
           <Tabs
-            variant="secondary"
+            variant="primary"
             className="inspector-properties"
             selectedKey={section}
             onSelectionChange={(key) => setSection(key as typeof section)}

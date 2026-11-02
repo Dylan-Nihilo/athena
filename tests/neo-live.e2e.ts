@@ -4,8 +4,10 @@ import { _electron as electron, expect } from '@playwright/test';
 import { createServer } from 'node:http';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import path from 'node:path';
+import { seedLegacyWorkspace } from './legacy-workspace-fixture';
 const root = process.cwd();
 const dir = await mkdtemp(path.join(root, '.runtime/neo-live-'));
+await seedLegacyWorkspace(path.join(dir, 'data'));
 const saved: unknown[] = [];
 const site = createServer(async (req, res) => {
   if (req.url === '/save' && req.method === 'POST') {

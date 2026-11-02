@@ -11,13 +11,27 @@
   font-size: 10px;
   letter-spacing: 0.08em;
 }
-.usage-main-metric > .usage-billing-note {
-  margin: -10px 0 22px;
+.usage-panel .usage-main-metric > .usage-billing-note {
+  margin: 0;
   line-height: 1.7;
 }
+.usage-secondary-metric {
+  padding-top: 8px;
+}
+.usage-panel .usage-secondary-metric > strong {
+  font-size: clamp(24px, 2.4vw, 28px);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
 .usage-token-total > strong {
-  font-size: 16px;
   font-variant-numeric: tabular-nums;
+}
+.usage-panel .usage-io-total > strong {
+  font-size: clamp(18px, 2vw, 24px);
+}
+.usage-metric-divider {
+  color: var(--muted);
+  font-weight: 400;
 }
 .usage-table-cost {
   color: var(--foreground);
@@ -28,8 +42,10 @@
 }
 .usage-pricing-details {
   margin-top: 24px;
-  border-top: 1px solid var(--separator);
-  padding-top: 14px;
+  border: 0;
+  border-radius: 16px;
+  padding: 14px 16px;
+  background: var(--surface-secondary);
 }
 .usage-pricing-details .disclosure__trigger {
   display: flex;
@@ -42,7 +58,7 @@
 }
 .usage-pricing-details p {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.8;
   margin: 12px 0;
   max-width: 95ch;
@@ -64,6 +80,9 @@
   }
   .usage-panel .usage-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .usage-secondary-metric {
+    padding-top: 0;
   }
   .usage-filters .choice-select {
     max-width: 100%;

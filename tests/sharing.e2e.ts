@@ -6,6 +6,7 @@ import { createServer } from 'node:http';
 import { get as httpsGet } from 'node:https';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { seedLegacyWorkspace } from './legacy-workspace-fixture';
 import { CdpConnection } from '../src/main/browser-cdp';
 import type { ShareState } from '../src/shared/share';
 import { WebSocket } from 'ws';
@@ -20,6 +21,7 @@ import {
 } from './sharing-test-support';
 const root = process.cwd();
 const temp = await mkdtemp(path.join(root, '.runtime/share-e2e-'));
+await seedLegacyWorkspace(path.join(temp, 'data'));
 const site = createServer((req, res) => {
   res.setHeader('Content-Type', 'text/html;charset=utf-8');
   res.end(

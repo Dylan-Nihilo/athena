@@ -14,7 +14,8 @@ import { createServer, type Server } from 'node:http';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { BrowserRuntime } from './browser';
+import { userInfo } from 'node:os';
+import { BrowserRuntime, discoverBrowserOS } from './browser';
 import { SharingRuntime } from './sharing';
 import { dispatchBrowserAction } from './browser-actions';
 import { CodexSession, detectAgents } from './agents';
@@ -23,6 +24,7 @@ import { FeishuConnector } from './feishu';
 import { TurnNotifications } from './notifications';
 import { Store } from './store';
 import { UsageStore } from './usage';
+import { managedCodexPath, OnboardingRuntime } from './onboarding';
 import type { ModelOption } from '../shared/usage';
 import type {
   AgentEvent,
@@ -54,9 +56,16 @@ app.setPath(
 );
 app.setName('Agent Workbench');
 app.setAboutPanelOptions({ applicationName: 'Athena' });
+let localUserName = '本机用户';
+try {
+  localUserName = userInfo().username || localUserName;
+} catch {
+  // Optional display metadata must not prevent the workbench from starting.
+}
 let window: BrowserWindow | undefined;
 let store: Store;
 let usage: UsageStore;
+let onboarding: OnboardingRuntime | undefined;
 let modelCatalog: ModelOption[] | undefined;
 let modelCatalogRequest: Promise<ModelOption[]> | undefined;
 let codexConnection: CodexConnectionState = { status: 'idle' };
@@ -118,6 +127,11 @@ function codexInfo() {
     throw new Error('请先登录本机 Codex，再刷新连接');
   return { ...info, path: info.path };
 }
+function assertTaskEnvironment() {
+  if (onboarding?.blocksTasks) throw new Error('请先完成 Codex 登录和工作目录准备');
+  if (onboarding?.changingEnvironment)
+    throw new Error('运行环境正在准备，请等待完成或取消这次准备');
+}
 function selectedConversation() {
   return (
     store.data.conversations.find(
@@ -132,6 +146,7 @@ function selectedConversation() {
   );
 }
 async function listModels(refresh = false) {
+  assertTaskEnvironment();
   if (!refresh && modelCatalog) return modelCatalog;
   if (modelCatalogRequest) return modelCatalogRequest;
   const revision = connectionRevision;
@@ -160,6 +175,11 @@ function resetConnections() {
   connectionState({ status: 'idle' });
 }
 function prepareConversation(conversation: Conversation): Promise<CodexSession> {
+  try {
+    assertTaskEnvironment();
+  } catch (error) {
+    return Promise.reject(error);
+  }
   if (active || startingTurn) {
     const session = sessions.get(conversation.id);
     if (session && active?.session === session) return Promise.resolve(session);
@@ -185,7 +205,7 @@ function prepareConversation(conversation: Conversation): Promise<CodexSession> 
   const request = (async () => {
     const info = codexInfo();
     try {
-      await neo.start();
+      if (onboarding?.allowsBrowserStartup !== false) await neo.start();
     } catch {
       /* Local CLI work does not require Neo. */
     }
@@ -396,6 +416,7 @@ async function runTurn(
   readonly = false,
   selectedElement?: ElementRef,
 ) {
+  assertTaskEnvironment();
   if (active || startingTurn) throw new Error('当前任务还在进行，请先停止或等待完成');
   if (conversation.workspace && conversation.workspace !== store.data.settings.workspace)
     throw new Error('这段对话属于另一个工作目录。请切换回原目录，或新建对话。');
@@ -450,7 +471,7 @@ async function runTurn(
   usage.start(assistant.id, info.id, modelSelection?.model);
   saveUsage();
   try {
-    await neo.start();
+    if (onboarding?.allowsBrowserStartup !== false) await neo.start();
   } catch {
     /* Local CLI tasks remain available; Neo reports its own connection state. */
   }
@@ -608,6 +629,7 @@ function startTurn(
   readonly = false,
   selectedElement?: ElementRef,
 ) {
+  assertTaskEnvironment();
   if (active || startingTurn) throw new Error('当前任务还在进行，请先停止');
   void runTurn(conversation, text, context, 'desktop', readonly, selectedElement).catch((error) =>
     notice(error instanceof Error ? error.message : '任务失败', 'error'),
@@ -665,7 +687,11 @@ async function createBrowserRuntime(binaryPath?: string) {
       }
       emit({ type: 'browser:state', state });
       sharing?.onBrowserState(state);
-      if (state.status === 'ready' && neo?.getState().status === 'stopped')
+      if (
+        state.status === 'ready' &&
+        neo?.getState().status === 'stopped' &&
+        onboarding?.allowsBrowserStartup !== false
+      )
         void neo.start().catch(() => {});
     },
     onFrame: (frame) => {
@@ -734,6 +760,8 @@ async function createBrowserRuntime(binaryPath?: string) {
 }
 async function snapshot(): Promise<AppSnapshot> {
   return {
+    onboarding: onboarding?.getState(),
+    localUser: { name: localUserName },
     settings: store.data.settings,
     agents,
     codexConnection,
@@ -748,6 +776,40 @@ async function snapshot(): Promise<AppSnapshot> {
   };
 }
 async function invoke(action: string, payload: unknown) {
+  if (action.startsWith('onboarding:')) {
+    if (!onboarding) throw new Error('首次准备尚未初始化');
+    switch (action) {
+      case 'onboarding:open':
+        return onboarding.open();
+      case 'onboarding:refresh':
+        return onboarding.refresh();
+      case 'onboarding:plan-install': {
+        const kind = record(payload).kind;
+        if (kind !== 'codex' && kind !== 'browser') throw new Error('安装类型无效');
+        return onboarding.planInstall(kind);
+      }
+      case 'onboarding:install':
+        return onboarding.install(string(record(payload).planId, 100));
+      case 'onboarding:login/start':
+        return onboarding.startLogin();
+      case 'onboarding:login/reopen':
+        return onboarding.reopenLogin();
+      case 'onboarding:cancel':
+        return onboarding.cancel(string(record(payload).operationId, 100));
+      case 'onboarding:workspace/pick':
+        return onboarding.pickWorkspace();
+      case 'onboarding:workspace/confirm':
+        return onboarding.confirmWorkspace(string(record(payload).candidateId, 100));
+      case 'onboarding:browser/prepare':
+        return onboarding.prepareBrowser();
+      case 'onboarding:defer':
+        return onboarding.defer();
+      case 'onboarding:complete':
+        return onboarding.complete();
+      default:
+        throw new Error('首次准备操作不受支持');
+    }
+  }
   if (action.startsWith('browser:'))
     return sharing
       ? sharing.hostAction(action, payload)
@@ -783,8 +845,13 @@ async function invoke(action: string, payload: unknown) {
     case 'app:snapshot':
       return snapshot();
     case 'agents:refresh':
-      agents = await detectAgents();
-      if (!active && !startingTurn) {
+      agents = await detectAgents(managedCodexPath(app.getPath('userData')));
+      if (
+        !active &&
+        !startingTurn &&
+        !onboarding?.blocksTasks &&
+        !onboarding?.changingEnvironment
+      ) {
         resetConnections();
         void prepareConversation(selectedConversation()).catch(() => {});
       }
@@ -840,6 +907,7 @@ async function invoke(action: string, payload: unknown) {
       return conversation;
     }
     case 'conversation:send': {
+      assertTaskEnvironment();
       const data = record(payload);
       const context = data.context === undefined ? undefined : string(data.context, 60_000);
       const selectedRef =
@@ -888,6 +956,7 @@ async function invoke(action: string, payload: unknown) {
     }
     case 'settings:workspace': {
       if (active || startingTurn) throw new Error('请先停止当前任务');
+      if (onboarding?.changingEnvironment) throw new Error('请先完成或取消当前环境准备');
       const selection = await dialog.showOpenDialog(window!, {
         title: '选择工作目录',
         properties: ['openDirectory', 'createDirectory'],
@@ -901,6 +970,7 @@ async function invoke(action: string, payload: unknown) {
     }
     case 'settings:agent': {
       if (active || startingTurn) throw new Error('请先停止当前任务');
+      if (onboarding?.changingEnvironment) throw new Error('请先完成或取消当前环境准备');
       const id = string(record(payload).id, 50);
       const agent = agents.find((item) => item.id === id && item.available && item.supported);
       if (!agent) throw new Error('当前 Agent 尚不可用');
@@ -910,6 +980,7 @@ async function invoke(action: string, payload: unknown) {
     }
     case 'settings:browser': {
       if (active || startingTurn) throw new Error('请先停止当前任务');
+      if (onboarding?.changingEnvironment) throw new Error('请先完成或取消当前环境准备');
       const selection = await dialog.showOpenDialog(window!, {
         title: '选择 BrowserOS neo',
         properties: ['openFile', 'openDirectory'],
@@ -945,6 +1016,7 @@ async function invoke(action: string, payload: unknown) {
       return recording;
     }
     case 'recording:analyze': {
+      assertTaskEnvironment();
       const id = string(record(payload).id, 100);
       const recording = store.data.recordings.find((item) => item.id === id);
       if (!recording) throw new Error('找不到这段录制');
@@ -1066,8 +1138,99 @@ async function launch() {
   await store.load();
   usage = new UsageStore(app.getPath('userData'));
   await usage.load(store.data.conversations);
-  agents = await detectAgents();
+  agents = await detectAgents(managedCodexPath(app.getPath('userData')));
   await createBrowserRuntime(store.data.settings.browserPath);
+  onboarding = new OnboardingRuntime({
+    directory: app.getPath('userData'),
+    existingData: store.existingData,
+    progress: store.data.onboarding,
+    initialAgents: agents,
+    settings: () => store.data.settings,
+    isBusy: () => Boolean(active || startingTurn || sharing?.active),
+    probeAgents: () => detectAgents(managedCodexPath(app.getPath('userData'))),
+    onAgents: (result) => {
+      agents = result;
+    },
+    pickWorkspace: async () => {
+      const result = await dialog.showOpenDialog(window!, {
+        title: '选择工作目录',
+        properties: ['openDirectory'],
+      });
+      return result.canceled ? undefined : result.filePaths[0];
+    },
+    commitWorkspace: async (directory) => {
+      if (active || startingTurn || sharing?.active) throw new Error('请先结束当前任务或共享');
+      const previous = store.data.settings.workspace;
+      store.data.settings.workspace = directory;
+      try {
+        await store.save();
+      } catch (error) {
+        store.data.settings.workspace = previous;
+        throw error;
+      }
+      resetConnections();
+      selectedConversationId = undefined;
+    },
+    saveProgress: async (progress) => {
+      const previous = store.data.onboarding;
+      store.data.onboarding = progress;
+      try {
+        await store.save();
+      } catch (error) {
+        store.data.onboarding = previous;
+        throw error;
+      }
+    },
+    discoverBrowser: async () => {
+      const configured = store.data.settings.browserPath || process.env.WORKBENCH_BROWSER_PATH;
+      return (
+        (configured ? await discoverBrowserOS(configured) : undefined) ??
+        (await discoverBrowserOS(undefined, app.getPath('userData')))
+      );
+    },
+    browserReady: () => browser.getState().status === 'ready' && neo.getState().status === 'ready',
+    prepareBrowser: async (binary, signal, phase) => {
+      signal.throwIfAborted();
+      if (active || startingTurn || sharing?.active) throw new Error('请先结束当前任务或共享');
+      if (binary && browser.getState().binaryPath !== binary) await createBrowserRuntime(binary);
+      signal.throwIfAborted();
+      const targetBrowser = browser,
+        targetNeo = neo;
+      const hadBrowser = ['ready', 'starting'].includes(targetBrowser.getState().status);
+      const hadNeo = ['ready', 'starting'].includes(targetNeo.getState().status);
+      const cleanup = async () => {
+        if (!hadNeo) await targetNeo.stop();
+        if (!hadBrowser) await targetBrowser.dispose();
+      };
+      const cancel = () => {
+        void cleanup().catch(() => {});
+      };
+      signal.addEventListener('abort', cancel, { once: true });
+      try {
+        phase('starting', '正在连接 BrowserOS neo…');
+        await targetBrowser.start();
+        signal.throwIfAborted();
+        phase('preparing-tools', '正在校验并准备网页控制组件…');
+        await targetNeo.start();
+        signal.throwIfAborted();
+        const previous = store.data.settings.browserPath;
+        store.data.settings.browserPath = targetBrowser.getState().binaryPath;
+        try {
+          await store.save();
+        } catch (error) {
+          store.data.settings.browserPath = previous;
+          throw error;
+        }
+      } finally {
+        signal.removeEventListener('abort', cancel);
+        if (signal.aborted) await cleanup();
+      }
+    },
+    openExternal: (url) => shell.openExternal(url),
+    download: (url, options) => net.fetch(url, options),
+    onState: (state) => emit({ type: 'onboarding:state', state }),
+  });
+  await onboarding.initialize();
   feishu = new FeishuConnector({
     storageDir: path.join(app.getPath('userData'), 'feishu'),
     deferRestore: true,
@@ -1122,12 +1285,14 @@ async function launch() {
   else await window.loadFile(path.join(__dirname, '../renderer/index.html'));
   window.show();
   if (window.isFocused()) restoreConnections();
-  void browser
-    .start(demoUrl)
-    .catch((error) => notice(error instanceof Error ? error.message : '浏览器启动失败', 'error'));
-  void prepareConversation(selectedConversation())
-    .then(() => listModels())
-    .catch(() => {});
+  if (onboarding.allowsBrowserStartup)
+    void browser
+      .start(demoUrl)
+      .catch((error) => notice(error instanceof Error ? error.message : '浏览器启动失败', 'error'));
+  if (!onboarding.blocksTasks && !onboarding.getState().requiresSetup)
+    void prepareConversation(selectedConversation())
+      .then(() => listModels())
+      .catch(() => {});
   app.on('activate', () => window?.show());
 }
 app.on('window-all-closed', () => app.quit());
@@ -1140,6 +1305,7 @@ app.on('before-quit', (event) => {
   browser?.revokeAgentControl();
   demoServer?.close();
   void Promise.allSettled([
+    onboarding?.dispose(),
     sharing
       ?.stop()
       .then(() => neo?.stop())

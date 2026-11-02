@@ -4,6 +4,7 @@ import { _electron as electron, expect } from '@playwright/test';
 import { createServer } from 'node:http';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { seedLegacyWorkspace } from './legacy-workspace-fixture';
 import { CdpConnection } from '../src/main/browser-cdp';
 
 const root = process.cwd();
@@ -13,6 +14,7 @@ const rounds = Number(process.env.ATHENA_PERF_ROUNDS || 3);
 assert(Number.isInteger(rounds) && rounds > 0);
 await mkdir(path.join(root, '.runtime'), { recursive: true });
 const temp = await mkdtemp(path.join(root, '.runtime/scroll-motion-'));
+await seedLegacyWorkspace(temp);
 const [portrait, video] = await Promise.all([
   readFile(path.join(root, 'src/renderer/assets/brand/athena-profile-v7-refined-eye.png')),
   readFile(path.join(root, 'tests/fixtures/scroll-motion.mp4')),

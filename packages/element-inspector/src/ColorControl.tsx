@@ -139,20 +139,25 @@ export function ColorControl({
                     </div>
                   </ColorSlider>
                 ))}
-                <ColorField
-                  slot={null}
-                  className="ei-hex"
-                  value={active}
-                  aria-label="十六进制颜色"
-                  onChange={(next) => {
-                    if (!next) return;
-                    choose(next.withChannelValue('alpha', active.getChannelValue('alpha')));
-                    onCommit();
-                  }}
-                >
-                  <Label>HEX</Label>
-                  <Input className="ei-input" spellCheck={false} />
-                </ColorField>
+                <div className="ei-color-values">
+                  <ColorField
+                    slot={null}
+                    className="ei-hex"
+                    value={active}
+                    aria-label="十六进制颜色"
+                    onChange={(next) => {
+                      if (!next) return;
+                      choose(next.withChannelValue('alpha', active.getChannelValue('alpha')));
+                      onCommit();
+                    }}
+                  >
+                    <Label className="ei-sr-only">HEX</Label>
+                    <Input className="ei-input" spellCheck={false} />
+                  </ColorField>
+                  <output className="ei-color-alpha" aria-label="颜色不透明度">
+                    {Number((active.getChannelValue('alpha') * 100).toFixed(2))}%
+                  </output>
+                </div>
               </Dialog>
             </Popover>
           </DialogTrigger>

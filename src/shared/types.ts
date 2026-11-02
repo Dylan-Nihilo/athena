@@ -465,6 +465,8 @@ export interface CodexConnectionState {
   message?: string;
 }
 export interface AppSnapshot {
+  onboarding?: import('./onboarding').OnboardingState;
+  localUser?: { name: string };
   settings: Settings;
   agents: AgentInfo[];
   codexConnection?: CodexConnectionState;
@@ -478,6 +480,7 @@ export interface AppSnapshot {
   share?: import('./share').ShareState;
 }
 export type AppEvent =
+  | { type: 'onboarding:state'; state: import('./onboarding').OnboardingState }
   | { type: 'codex:state'; state: CodexConnectionState }
   | { type: 'usage:updated' }
   | { type: 'share:state'; state: import('./share').ShareState }

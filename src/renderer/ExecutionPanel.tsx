@@ -129,6 +129,15 @@ export function ExecutionPanel({
     <section
       className={`execution-panel ${blocked || pending ? 'needs-attention' : ''}`}
       aria-label="任务执行"
+      data-state={
+        pending || blocked
+          ? 'attention'
+          : message.status === 'error'
+            ? 'error'
+            : running
+              ? 'running'
+              : 'idle'
+      }
     >
       <div className="execution-heading" role="status">
         {pending ? (
@@ -266,6 +275,7 @@ export function ExecutionPanel({
                 key={tool.id}
                 textValue={toolTitle(tool.name)}
                 className="execution-tool"
+                data-tool-status={tool.status}
                 aria-expanded={expandedToolId === tool.id}
               >
                 <ListView.ItemContent>

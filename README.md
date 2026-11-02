@@ -1,46 +1,49 @@
 # Athena
 
-Athena 是运行在 Mac 上的本地 AI 工作台。使用本机 Codex 执行任务，在同一窗口的 BrowserOS neo 侧栏中浏览多个页面、精准选取 DOM 元素、预览文字与样式修改、录制操作，或把元素上下文交给 CLI 修改当前项目源码。
+Athena 是运行在 Mac 上的本地 AI 工作台：用 Codex 处理真实项目，在同一窗口浏览网页、调整页面元素，并核对任务结果。
 
-当前版本 **0.6.1**：已整合独立元素控件库，修复选择菜单裁切和图标重叠，加入推理滑块、Codex 提前初始化与连接复用、不中断整轮任务的人工浏览，以及 USD API 等价用量估算。完整近期变化见 [更新日志](CHANGELOG.md)。
+- **本机任务**：复用已登录的 Codex CLI，展示计划、工具动作、审批、结果与产物。
+- **首次准备**：用连续对话完成 Codex 检测、安装与登录、工作目录确认，以及可选的网页工具准备。
+- **网页工作区**：BrowserOS neo 多标签浏览、元素选取、可撤销预览与操作录制。
+- **页面协作**：邀请他人查看当前网页，分别管理操作权限与控制权。
+- **模型与用量**：读取 CLI 支持的模型，汇总真实 Token 与 USD API 等价估算。
 
-0.2.0 采用中性灰与冷蓝色界面，支持面板、侧栏与弹层过渡，以及系统减少动态效果设置。本轮重点是本机 CLI 和浏览器；保留已有飞书功能，未扩展其接入范围。
+![Athena 实际应用工作区](docs/screenshots/workspace.png)
 
-0.2.2 补齐无外链 CSS 渐变、阴影、变换与可撤销的关键帧动效预览，并修复切换标签后画面停止更新的问题。元素检查器可选择呼吸、弹跳或组合动效，Agent 也可通过结构化关键帧设置。动效可停止、撤销，并遵守系统减少动态效果设置；网站自身的动画保持不变。工具失败时保留具体错误，便于定位不支持的属性或失效元素。
+## 下载
 
-0.2.3 增加原位悬停高亮、元素尺寸标签和稳定选中边界；选中前不展开检查器，Esc 可随时取消。正在处理的目标显示轻量扫光，修改完成短暂收束，减少动态效果时改用静态反馈。覆盖层不改写网站样式或已有动画。已选元素的最新属性与 CLI 启动并行读取，AI 可直接一次提交预览修改，减少重复检查往返。
+**最新版本：[0.7.0](https://github.com/Dylan-Nihilo/athena/releases/tag/v0.7.0)。**
 
-0.2.4 修复窄侧栏中的桌面宽页面被截掉右侧的问题。默认只在内容横向溢出时适应宽度，响应式页面保持原布局；底部「页面缩放」可切换 100%。画面等比显示，点击、滚动与元素选取统一映射到实际页面坐标。纵向内容正常滚动；极宽页面达到渲染上限时会提示横向滚动。
+| 平台                  | 安装包                                                                                                         |
+| --------------------- | -------------------------------------------------------------------------------------------------------------- |
+| macOS · Apple Silicon | [Athena 0.7.0 DMG](https://github.com/Dylan-Nihilo/athena/releases/download/v0.7.0/Athena-0.7.0-mac-arm64.dmg) |
+| macOS · Apple Silicon | [Athena 0.7.0 ZIP](https://github.com/Dylan-Nihilo/athena/releases/download/v0.7.0/Athena-0.7.0-mac-arm64.zip) |
 
-Neo 原生接入与验收证据见 [接入记录](docs/neo-native-integration-research.md)；“网页任务”可查看实际工具执行记录。
+[SHA-256 校验文件](https://github.com/Dylan-Nihilo/athena/releases/download/v0.7.0/SHA256SUMS.txt) · [全部版本](https://github.com/Dylan-Nihilo/athena/releases)
 
-0.3.0 接入官方 Neo 原生工具与任务记录，并增加基于 Google A2UI v0.9.1 的即时元素调整面板。选中后可直接拖动滑块、选择颜色，或告诉 Agent “给我背景色、圆角和透明度控件”；Agent 也可直接按自然语言应用可撤销预览。每次连续调整归为一次撤销，面板始终绑定当前真实节点，导航或节点替换后拒绝旧操作。
+当前项目采用 ad-hoc 签名，尚未配置 Developer ID 分发签名、公证或自动更新。安装包不包含你的 Codex 登录或 BrowserOS neo；首次引导可按需准备运行组件。
 
-类型识别结合 DOM 与浏览器可访问性树。`div role=button` 显示为按钮；仅有点击事件的自定义节点明确标为推断，并在“定位”中显示依据。完整技术来源、范围与实测结果见 [元素交互核验](docs/element-interaction-research.md)。
+版本变化见 [CHANGELOG](CHANGELOG.md)。安装和使用细节见 [用户指南](docs/user-guide.md)。
 
-0.3.1 将元素编辑器移到左侧工作区，通过「对话 / 元素」切换；自然语言输入始终保留。右侧浏览器不再被编辑面板压缩，切换对话和编辑视图、开关编辑器或切换属性页时，浏览器视口保持原尺寸。调整控件按外观、排版、布局分组，窄窗口采用单列，属性区独立滚动；草稿在视图切换时保留。
+## 运行前提
 
-0.3.2 修复手动浏览时的滚动积压与低帧率：合并同一位置、方向的连续滚轮增量，复用人工控制状态，交互期间及时确认画面帧，并恢复 Chromium 默认 GPU 加速。页面选取、Retina 画面、缩放坐标和预览撤销保持原有行为。复现方法与实测数据见 [浏览器交互性能记录](docs/browser-interaction-performance.md)。
+1. **macOS Apple Silicon**：当前安装包的分发目标。
+2. **Codex CLI**：首次引导会检测已有安装与登录；缺少时展示官方来源和安装位置，再由你确认准备。
+3. **BrowserOS neo（网页功能需要）**：引导可复用已有安装或准备运行组件，也可以稍后设置；普通 Chrome 不能替代它。
 
-0.4.0 增加多人共享页面：Share 邀请、主持人确认、查看/操作权限、单一页面画面同步、控制权交接、双人元素预览与操作记录。受邀者通过浏览器加入，支持可互通的局域网或 VPN；连接、权限、实测结果与未验证边界见 [共享工作区页面](docs/shared-workspace.md)。
+Codex 安装与登录参见 [官方说明](https://github.com/openai/codex#quickstart)。Athena 复用 CLI 登录，模型请求使用对应账户的配额或计费。
 
-0.5.0 增加复杂网页任务的计划、证据检查点与失败恢复约束。动态表单、跨 iframe/Shadow DOM、筛选分页、多标签、异步校验和受控上传下载已通过隔离工作流验收；结果未知时先核对回执，停止/人工接管会取消后续动作。真实 CLI 验收、结构化事件和未验证范围见 [复杂网页任务执行](docs/complex-web-tasks.md)。
+已有用户直接进入工作台，可从「设置与连接」重开引导。选择、检测和结果会留在引导对话中；取消或回看不会自动重放安装与登录。
 
-0.6.0 增加真实计划、动作、核对证据、人工处理和产物交互面板；可从已连接 Codex 选择模型及推理强度，并核对实际轮次配置。侧栏独立“用量”页按时间、模型、助手和日期汇总真实 Token，保留缺失数据，费用不可得时不填示例金额。用法、统计口径与验收见 [Agent 交互与用量](docs/agent-experience.md)。
+BrowserOS neo 使用独立 profile，在后台运行；网页画面与输入位于 Athena 窗口内。源码开发时可用下方脚本安装项目固定版本。
 
-界面使用 HeroUI 3.2.7 与 HeroUI Pro 1.0.0-beta.10；元素属性编辑采用基于 React Aria 的独立 [元素控件库](packages/element-inspector/README.md)，统一数值、颜色、四边间距和选择菜单。黑白女性侧脸图标由 GPT Image 生成，CLI 标识保留上游原色。输入法确认不会提交任务，Shift+Enter 换行；视图切换保留草稿，组件动效遵循系统减少动态效果设置。
+当前任务执行器只接通 **Codex**。其他 CLI 的安装检测不代表已接入执行；桌面 Computer Use 仍处调研阶段。详见 [能力边界](docs/user-guide.md#能力与验证边界)。
 
-页面直接编辑的成熟方案与适配结论见 [直接编辑方案调研](docs/direct-edit-research.md)。
+## 从源码开发
 
-![Athena 工作区](docs/screenshots/workspace.png)
+需要 Node.js **22.12+**、npm、已登录的 Codex，以及有效的 HeroUI Pro 构建授权。
 
-本仓库公开可见，项目代码保持 `UNLICENSED`，尚未授予开源许可证。当前接通的是 **Codex**；Claude Code、OpenCode、Gemini CLI 仅检测安装情况，尚不能在本应用执行任务。
-
-## 启动
-
-需要 macOS、Node.js 22.12 或更高版本、npm，以及可正常登录的 Codex CLI。
-
-在 `athena` 仓库根目录执行：
+在仓库根目录运行：
 
 ```bash
 npm ci
@@ -48,123 +51,40 @@ npm run setup:browseros
 npm run dev
 ```
 
-`npm ci` 的根 `postinstall` 会运行 `heroui:setup`，校验并从本机 `~/.heroui/cache/react/1.0.0-beta.10` 恢复完整的已授权 Pro 构件；缓存不可用时通过现有 `hpsetup` 中转安装。新环境需私下配置 `HEROUI_KEY`，再执行 `npm run heroui:setup`；不把密钥写入仓库。Pro 为商业授权组件，构建需使用有效授权，完整包与缓存不随源码提交。
+`npm ci` 会执行 `heroui:setup`，优先恢复完整的本机授权缓存。新环境需私下配置 `HEROUI_KEY`；不要把密钥或 Pro 构件提交到仓库。详见 [开发环境](docs/user-guide.md#开发环境与验证)。
 
-`setup:browseros` 使用项目内的 `scripts/setup-browseros.mjs` 获取并校验官方 BrowserOS neo，默认放在仓库相邻的 `../browseros-runtime/BrowserOS neo.app`。脚本不启动浏览器，也不写入 `/Applications`。已有安装可以在「设置与连接 → 浏览器」选择 `BrowserOS neo.app`；应用会尝试发现 `/Applications`、用户 `Applications` 及项目相邻的 `browseros-runtime`。不会把普通 Chrome 当作 BrowserOS neo。
+`setup:browseros` 下载并校验官方固定版本，默认放到相邻的 `../browseros-runtime/`，不启动浏览器或覆盖系统安装。
 
-如果尚未安装 Codex，可使用官方 npm 包，然后完成官方登录：
-
-```bash
-npm install -g @openai/codex
-codex login
-codex login status
-```
-
-登录完成后，在 Athena 的「本机 Agent」设置中刷新检测。Athena 复用该 CLI 的现有登录，不要求把 Codex 密钥粘贴到本应用。安装与登录方式以 [Codex 官方说明](https://github.com/openai/codex#quickstart) 为准；模型调用使用对应账户的配额或计费。
-
-构建后启动和生成本机应用目录：
-
-```bash
-npm run build
-npm start
-
-# 生成本机 macOS app，采用 ad-hoc 签名，尚未公证
-npm run package
-```
-
-应用位于 `release/` 下，对应名称为 `Athena.app`。当前打包配置使用 ad-hoc 签名，没有 Apple Developer ID 签名、公证或自动更新，不代表已完成对外发布。
-
-## 体验一次完整流程
-
-1. 在设置中选择真实项目目录，确认 Codex 已登录。点击右上角「浏览器」，在地址栏输入任意受支持的 HTTP(S) 地址。
-2. 用标签栏的 `+` / `⌘T` 新建页面；点击标签切换，`⌘W` 关闭活动标签，`⌘L` 定位地址栏。各标签保留独立页面和历史；页面弹出的新窗口也进入标签栏。
-3. 点击「选取元素」，悬停查看高亮和尺寸，再点击页面的文字、图片或控件；也可打开元素检查器，按文字或唯一 CSS 选择器查找。检查器展示层级、定位信息、文字和计算样式，选取本身不会点击目标按钮。
-4. 「调整」中的滑块、颜色和布局控件直接预览。切换到「内容」「样式」「动效」后，可修改内容或样式并点击「应用预览」，在页面中即时查看，并可逐次撤销。「背景 / 渐变」可输入 `linear-gradient(...)`；「动效」可选择呼吸或弹跳并调整周期。预览只改变当前 DOM，刷新后恢复。含复杂子节点或敏感内容的元素不会被文字编辑破坏，可以选择其具体文字节点或调整允许的样式。外链图片、脚本与任意样式表注入不属于预览接口。
-5. 点击「修改源码」，把标签、frame、稳定元素引用、选择器和累计预览改动附加到聊天。确认要求后发送；CLI 会先核对页面与项目的对应关系，再定位组件、请求必要审批、修改文件并验证。任意远端网站不会自动对应到本机源码。
-6. 点击「录制」，完成一段跨页面操作后结束。记录包含标签/frame 身份、精确元素目标、编辑与撤销步骤，可导出 JSON，并交给 Agent 分析目标、步骤、参数与待确认预期。
-
-命令、文件写入或额外权限请求需要时在 Athena 桌面界面确认。聊天中的停止按钮可中止当前 Agent 任务。直接操作网页或切换标签会使旧页面观察与排队动作失效，但保留整轮 AI 任务；只读等待及时让出输入队列，AI 重新观察后继续。中断写操作的结果仍需核对，避免重复提交。
-
-Codex 在应用启动、创建和选中对话时提前准备执行连接，模型目录与连续任务复用同一会话，预热不发送模型请求。浏览器工具升级时，Athena 保留完整界面对话和旧线程 ID，将已保存的可见历史传给一个明确标记的新执行会话；不会把未更新的旧工具伪装成新版本。CLI 进程退出后按真实状态重建连接。
-
-## 浏览器怎样运行
-
-Electron 负责聊天、设置和同窗口的浏览器侧栏；实际网页由官方 BrowserOS neo 原生引擎以 **DPR 2（Retina）** 渲染。Athena 通过本机 CDP 将实时页面帧流嵌入右侧面板，并把鼠标、键盘、中文输入和滚动转发到该页面。
-
-预览 JPEG 按面板实际物理像素捕获，并保留 2048px 最大边长；fit 后扩大的网页逻辑尺寸不再造成多余的捕获、传输与解码负担。
-
-neo 作为独立后台进程以 headless 模式运行，**不会打开独立浏览器窗口**。用户始终在 Athena 的同一窗口内操作网页；这不是把 Electron 自带 Chromium 标成 neo，也不只是静态截图。DPR 2 是页面渲染设置，输入坐标按 CSS 像素映射。
-
-使用独立浏览器 profile，保留关闭随包 sidecars 的启动方式；Athena 单独启动校验后的官方 Neo claw-server 0.0.90，通过原生 MCP 执行网页任务，并保留自身的精确元素编辑和画面输入链路。首次连接会从官方 release 下载对应架构的服务资源（约需等待下载完成），保存到应用自己的 neo/runtime 目录；开发环境可复用已校验缓存。不会替换 Neo app 或导入个人 Chrome 配置；退出时结束本应用管理的进程。
-
-每个标签都有独立 CDP 状态，只有活动标签输出画面。元素引用同时绑定标签、frame、文档和本次激活状态；导航或切换后，旧引用会拒绝执行，避免同名元素或旧坐标落到另一个页面。帧流按原比例显示，窗口和检查器调整大小期间不会沿两个轴拉伸页面，尺寸未同步时不接受坐标点击。
-
-元素工具已验证普通 DOM、开放的 Shadow DOM，以及普通同源和跨源 iframe；旋转或 3D 变换的 iframe 会拒绝精确坐标操作。closed Shadow DOM 的内部节点、Canvas/WebGL 内部绘制对象不会被当作可定位的 DOM 元素。Neo 原生任务支持批量填表、页面等待、提取、文件传输及对话框处理；高级脚本和上传在桌面确认。人工协作会暂停 Agent 并提供“已完成，继续”。任务结束后仍未处理的对话框会关闭。扩展、视频与 rrweb 回放尚未作为完整功能验收。
-
-## 飞书
-
-在「设置与连接 → 飞书」点击「创建专用机器人」，用飞书扫码并确认新建。看到“连接已建立”后，向新机器人私聊发送桌面显示的 `绑定 WB-…`，完成操作者配对。
-
-配对后，私聊任务即可在本机运行并回复结果；同一飞书会话在同一工作目录下复用对话。发送 `/cancel`、`停止` 或 `取消` 可请求停止。需要审批时，仍需回到 Mac 确认。
-
-连接并配对期间，桌面发起的任务也会发送飞书通知：Agent 本轮回复结束、执行失败，以及等待回答或操作审批。结构化提问会展示问题和选项；被 CLI 标记为敏感的问题只提示回到桌面填写，审批通知不发送完整命令或权限载荷。回答与审批继续在 Athena 内完成，不接受飞书消息作为批准指令。普通文本提问随本轮回复通知，不通过问号猜测任务状态。
-
-同一请求只通知一次，已解决或停止的待发送提醒会被丢弃；飞书发起的任务保留一条最终回复。通知投递失败不会把已完成的任务改成失败。断线期间不保存通知队列，恢复连接后也不补发过期审批提醒。
-
-Mac 必须保持开机、联网、Athena 运行。没有云端代跑；关闭应用或机器睡眠后，不承诺离线消息补发。只处理已配对操作者的原始单聊文本，以及富文本消息中的可见文字；不读取附件。详细步骤和权限见 [飞书连接指南](docs/feishu-setup.md)。
-
-**已实机验证飞书扫码创建、真实长连接、配对，以及系统授权后的加密配置恢复。飞书触发 Agent 操作并回传结果的最终联调仍在确认。**
-
-## 数据与凭据
-
-- Athena 沿用 `app.agent.workbench` 应用标识和 macOS 数据目录 `~/Library/Application Support/Agent Workbench/`，改名后继续使用已有聊天、录制和连接配置。`WORKBENCH_*` 环境变量、内部 IPC 和 `workbench_browser_*` 工具标识保持兼容。
-- 设置、聊天和操作记录保存在 Electron `userData` 的 `workspace.json`；这些普通工作区数据不是加密数据库。
-- 0.6.0 的模型选项保存在既有设置中；独立用量账本位于 `userData/usage.json`，仅保留任务标识、模型、时间、状态和真实 Token 统计，不包含隐藏推理。缺失的历史用量不按聊天文本估算。
-- 飞书 App Secret、操作者绑定和持久消息 inbox 通过 Electron `safeStorage` 加密后保存；密钥由 macOS 系统密钥存储保护，连接状态不会携带 App Secret。扫码取得的凭据留在主进程；手动输入框在保存成功后清空。加密能力不可用时，不发起机器人创建。
-- Codex 登录仍由官方 CLI 管理。浏览器 profile 与普通聊天/录制不属于上述飞书加密范围；演示建议使用测试账号。
-- 录制会遮罩识别出的敏感输入字段，但并非全站数据脱敏。检查导出的 JSON、页面文字和截图后再分享；Agent 获取的上下文会进入你选用的模型服务。
-- 不要将凭据、浏览器 profile、消息 inbox 或真实用户数据提交到 Git。用 `WORKBENCH_USER_DATA_DIR` 指定自定义数据目录时，应将它放在仓库之外。
-
-## 验证与已知范围
+常用检查与本机构建：
 
 ```bash
 npm run typecheck
 npm test
-
-# 隔离的提问/审批界面与 IPC 联调；使用测试 CLI，不调用模型或飞书
 npm run build
-npx tsx tests/attention.e2e.ts
-
-# 多标签、元素检查器、预览/撤销、源码上下文及录制的真实 Electron 联调
-# 使用隔离页面与测试 CLI，不写真实项目
-npx tsx tests/workbench.e2e.ts
-
-# 悬停、选中、即时取消、AI 处理中反馈、完成/失败/停止的真实界面联调
-npx tsx tests/selection-feedback.e2e.ts
-
-# 宽页面完整显示、等比输入、窄侧栏、检查器和缩放模式回归
-npx tsx tests/viewport-fit.e2e.ts
-
-# 新画面解码前禁止使用新坐标，过期解码不能提前解锁
-npx tsx tests/browser-frame-presentation.e2e.ts
-
-# 显式运行真实 Codex + BrowserOS neo 集成检查，会产生模型调用
-npx tsx tests/live-agent.e2e.ts
-
-# 显式验证渐变、呼吸弹跳、录制与撤销；仅使用隔离页面，会产生模型调用
-npx tsx tests/live-motion.e2e.ts
-# 对照：同一流程不预读取所选元素；也会产生模型调用
-npx tsx tests/live-motion.e2e.ts --without-selection-prefetch
+npm start
+npm run package
 ```
 
-测试覆盖 CLI 协议、浏览器行为和飞书持久化/配对/去重。真实 BrowserOS neo 与 Codex 的网页操作、录制分析链路已有本地验证；这不代表所有网站均兼容。飞书测试不创建真实应用、不发送真实消息。
+`package` 构建本机应用目录，默认输出到 `release/`。模型实测、共享联调和分发验证的范围见 [用户指南](docs/user-guide.md#开发环境与验证)。
 
-0.2.0 已用真实本机 Codex 验证工具升级后的会话延续、精确文件变更审批和 HTML 源码落盘，再用全新 BrowserOS 实例加载该文件确认结果。页面预览与源码修改是两条独立验证链路。
+前端修改先读 [DESIGN.md](DESIGN.md)；工程约定见 [AGENTS.md](AGENTS.md)。依赖版本以 [package.json](package.json) 与锁文件为准。
 
-0.1.1 的通知逻辑、超时/去重及提问与审批界面已通过自动化验证；真实 Codex 默认模式的结构化提问→测试回答→继续完成也已验证。该能力仅在 Athena 启动的进程中开启，不修改全局 CLI 配置。向真实飞书会话的通知投递仍待实机确认。
+## 文档导航
 
-操作理解目前产出分析和 JSON 记录，**尚未实现**一键生成完整 Playwright 回归用例、PRD 覆盖率报告或后端状态复原。当前只有供本机使用的 ad-hoc 签名打包，Developer ID 签名、公证、自动更新和对外发布尚未完成。
+| 文档                                              | 内容                                           |
+| ------------------------------------------------- | ---------------------------------------------- |
+| [用户指南](docs/user-guide.md)                    | 初次配置、任务、网页预览、共享、数据与常见问题 |
+| [设计约定](DESIGN.md)                             | 视觉方向、HeroUI 组件映射、状态与交互          |
+| [Agent 交互与用量](docs/agent-experience.md)      | 模型执行证据、Token 口径与缺失数据             |
+| [共享工作区页面](docs/shared-workspace.md)        | 网络条件、参与者权限与控制权                   |
+| [飞书连接指南](docs/feishu-setup.md)              | 机器人创建、配对与连接恢复                     |
+| [Computer Use 交接](docs/computer-use-handoff.md) | 已实现的网页能力与桌面调研边界                 |
+| [第三方声明](THIRD_PARTY_NOTICES.md)              | 运行时、图标、组件来源与许可                   |
 
-第三方组件与许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+## 数据与许可
 
-更新后的本地签名可能触发 macOS 钥匙串授权。应用会显示恢复进度；超时后保留原配置，并提供“重试恢复连接”。请由用户本人处理系统授权，不需要重新创建机器人。
+沿用 `app.agent.workbench` 与 `~/Library/Application Support/Agent Workbench/`，保留已有数据、钥匙串和工具协议标识。迁移与凭据范围见 [数据与凭据](docs/user-guide.md#数据与凭据)。
+
+本仓库公开可见，项目代码保持 **UNLICENSED**，尚未授予开源许可证。HeroUI Pro 是商业授权组件；其包、源码和授权密钥不作为本项目的公开源码分发。
+
+真实模型调用、网站兼容性和外部飞书联调均有各自的验证范围；应用截图与设计稿不能替代运行证据。

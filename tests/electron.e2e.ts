@@ -1,11 +1,13 @@
 import { _electron as electron, expect } from '@playwright/test';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { seedLegacyWorkspace } from './legacy-workspace-fixture';
 import type { BrowserFrame, ToolResult } from '../src/shared/types';
 
 const root = process.cwd();
 await mkdir(path.join(root, '.runtime'), { recursive: true });
 const dataDir = await mkdtemp(path.join(root, '.runtime/ui-test-'));
+await seedLegacyWorkspace(dataDir);
 await mkdir(path.join(root, 'test-results'), { recursive: true });
 await mkdir(path.join(root, 'docs/screenshots'), { recursive: true });
 const application = await electron.launch({

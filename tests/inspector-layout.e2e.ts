@@ -3,12 +3,16 @@ import { _electron as electron, expect } from '@playwright/test';
 import { createServer } from 'node:http';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { seedLegacyWorkspace } from './legacy-workspace-fixture';
 const root = process.cwd();
 const dir = await mkdtemp(path.join(root, '.runtime/element-ui-'));
+await seedLegacyWorkspace(path.join(dir, 'data'));
 const site = createServer((req, res) => {
   res.setHeader('content-type', 'text/html;charset=utf-8');
   res.end(
-    '<!doctype html><meta charset="utf-8"><title>工作计划</title><style>body{font:16px system-ui;margin:40px;color:#202735;background:#f8fafc}h1{font-size:30px}p{color:#6b7483;line-height:1.8}.action{display:inline-block;padding:18px 32px;color:white;background:#336699;border-radius:8px;cursor:pointer;margin:16px 12px 0 0}</style><h1>下一步，从这里开始</h1><p>整理今天的计划，专注最重要的一件事。</p><div role="button" tabindex="0" id="target" class="action" onclick="this.textContent=\'已点击\'">开始整理</div><div role="button" tabindex="0" id="decoy" class="action">开始整理</div>',
+    '<!doctype html><meta charset="utf-8"><title>工作计划</title><style>body{font:16px system-ui;margin:40px;color:#202735;background:#f8fafc}h1{font-size:30px}p{color:#6b7483;line-height:1.8}.action{display:inline-block;padding:18px 32px;color:white;background:#336699;border-radius:8px;cursor:pointer;margin:16px 12px 0 0}</style><h1>下一步，从这里开始</h1><p>整理今天的计划，专注最重要的一件事。</p><div role="button" tabindex="0" id="target" class="action" onclick="this.textContent=\'已点击\'">开始整理</div><div role="button" tabindex="0" id="decoy" class="action">开始整理</div>' +
+      '<output id="shortcut-count" style="display:block">0</output>' +
+      '<script>document.addEventListener("keydown",event=>{if(event.key.toLowerCase()==="k"){const counter=document.getElementById("shortcut-count");counter.textContent=String(Number(counter.textContent)+1);}});</script>',
   );
 });
 await new Promise<void>((r) => site.listen(0, '127.0.0.1', r));
@@ -78,6 +82,63 @@ try {
     );
   const before = await geometry();
   await page.screenshot({ path: path.join(root, 'test-results/inspector-layout-before.png') });
+  const readShortcutCount = () =>
+    page.evaluate(async () => {
+      const result = await window.workbench.invoke<any>('browser:query', {
+        selector: '#shortcut-count',
+      });
+      return result.elements[0]?.text;
+    });
+  const browserKeyboard = page.locator('.browser-keyboard');
+  await browserKeyboard.focus();
+  await expect(browserKeyboard).toBeFocused();
+  // The plain key proves that the fixture observes real forwarded page input.
+  await page.keyboard.press('k');
+  await expect.poll(readShortcutCount).toBe('1');
+  await page.keyboard.press('Meta+k');
+  const searchDialog = page.getByRole('dialog', { name: '搜索对话', exact: true });
+  await expect(searchDialog).toBeVisible();
+  const preserveShortcutFailure = async (error: unknown) => {
+    const evidence = await page.evaluate(() => {
+      const active = document.activeElement;
+      return {
+        activeElement: active
+          ? {
+              tag: active.tagName,
+              id: active.id,
+              role: active.getAttribute('role'),
+              label: active.getAttribute('aria-label'),
+              placeholder: active.getAttribute('placeholder'),
+              className: active.className,
+            }
+          : null,
+        searchPresent: Boolean(document.querySelector('.conversation-search')),
+      };
+    });
+    await writeFile(
+      path.join(root, 'test-results/inspector-shortcut-failure.json'),
+      JSON.stringify({ passed: false, ...evidence, error: String(error) }, null, 2),
+    );
+    await page.screenshot({ path: path.join(root, 'test-results/inspector-shortcut-failure.png') });
+    throw error;
+  };
+  await expect(searchDialog.getByPlaceholder('搜索当前工作区的对话'))
+    .toBeFocused()
+    .catch(preserveShortcutFailure);
+  assert.equal(await readShortcutCount(), '1', 'Cmd+K must not reach the embedded page');
+  await page.keyboard.press('Escape');
+  await expect(searchDialog).toHaveCount(0).catch(preserveShortcutFailure);
+  assert.equal(await readShortcutCount(), '1', 'Closing search must not release a queued K');
+  assert.deepEqual(await geometry(), before, 'Application search must not resize the browser');
+  const applicationShortcut = {
+    shortcut: 'Cmd+K',
+    focusedSurface: 'browser-keyboard',
+    plainKeyCount: 1,
+    afterApplicationShortcut: Number(await readShortcutCount()),
+    openedApplicationSearch: true,
+    searchInputFocused: true,
+    escapeClosedSearch: true,
+  };
   const target = await page.evaluate(async () => {
     const result = await window.workbench.invoke<any>('browser:query', { selector: '#target' });
     return result.elements[0];
@@ -184,7 +245,9 @@ try {
     browserWithInspector: after,
     narrowBrowser: narrow,
     overflow,
+    applicationShortcut,
     checks: [
+      'Cmd+K opens application search without forwarding K to the focused embedded page',
       'Viewport and hit coordinates stay unchanged on selection, tab switch, close/reopen and edits',
       'Draft survives switching between conversation and inspector',
       'Live edit and undo keep exact selected node',

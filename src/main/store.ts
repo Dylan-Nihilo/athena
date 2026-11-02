@@ -2,14 +2,17 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Conversation, Recording, Settings } from '../shared/types';
+import type { OnboardingProgress } from '../shared/onboarding';
 
 export interface StoredData {
   settings: Settings;
   conversations: Conversation[];
   recordings: Recording[];
+  onboarding?: OnboardingProgress;
 }
 export class Store {
   data: StoredData;
+  existingData = false;
   private timer?: ReturnType<typeof setTimeout>;
   private writes = Promise.resolve();
   constructor(private directory: string) {
@@ -17,6 +20,7 @@ export class Store {
       settings: { workspace: path.join(directory, 'workspace'), agent: 'codex' },
       conversations: [],
       recordings: [],
+      onboarding: { version: 1, status: 'in-progress', stage: 'welcome', required: true },
     };
   }
   async load() {
@@ -33,6 +37,7 @@ export class Store {
       )
         throw new Error('工作区数据格式不正确');
       this.data = parsed;
+      this.existingData = true;
       for (const conversation of this.data.conversations)
         for (const message of conversation.messages)
           if (message.status === 'streaming') {
@@ -55,7 +60,7 @@ export class Store {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     }
-    await mkdir(this.data.settings.workspace, { recursive: true });
+    // Loading metadata never creates or repairs a project directory.
   }
   schedule() {
     clearTimeout(this.timer);

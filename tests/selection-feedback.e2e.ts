@@ -4,6 +4,7 @@ import { _electron as electron, expect } from '@playwright/test';
 import { createServer } from 'node:http';
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { seedLegacyWorkspace } from './legacy-workspace-fixture';
 import type {
   AppSnapshot,
   ElementDetails,
@@ -14,6 +15,7 @@ import type {
 const root = process.cwd();
 await mkdir(path.join(root, '.runtime'), { recursive: true });
 const temp = await mkdtemp(path.join(root, '.runtime/selection-ui-'));
+await seedLegacyWorkspace(path.join(temp, 'data'));
 const evidence = path.join(root, 'test-results/selection-feedback');
 await mkdir(evidence, { recursive: true });
 const bin = path.join(temp, 'bin');

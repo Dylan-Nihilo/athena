@@ -70,7 +70,7 @@ export function InsetsControl({
         {['上', '右', '下', '左'].map((side, index) => (
           <div className="ei-edge" key={side} title={side + label}>
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden>
-              <rect x="3" y="3" width="10" height="10" rx="1" stroke="#c1c4d1" />
+              <rect x="3" y="3" width="10" height="10" rx="1" stroke="var(--ei-rule)" />
               <path
                 d="M3 3h10"
                 stroke="currentColor"
