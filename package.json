@@ -24,7 +24,9 @@
     "test:models": "tsx tests/model-usage.e2e.ts",
     "test:agent-experience": "tsx tests/agent-experience.e2e.ts",
     "package:signed": "npm run build && electron-builder --config scripts/electron-builder.signed.cjs --mac dir --arm64 --publish never",
-    "package:release": "npm run build && electron-builder --config scripts/electron-builder.release.cjs --mac dmg zip --arm64 --publish never"
+    "package:release": "npm run build && electron-builder --config scripts/electron-builder.release.cjs --mac dmg zip --arm64 --publish never",
+    "release:upload": "node scripts/upload-release.mjs",
+    "version:bump": "bumpp package.json package-lock.json --no-commit --no-tag --no-push --ignore-scripts"
   },
   "build": {
     "appId": "app.agent.workbench",
@@ -82,6 +84,7 @@
     "@types/react-dom": "^19.3.0",
     "@types/ws": "^8.18.2",
     "@vitejs/plugin-react": "^6.1.2",
+    "bumpp": "^11.1.0",
     "electron": "^45.1.0",
     "electron-builder": "^26.18.0",
     "esbuild": "^0.28.2",
