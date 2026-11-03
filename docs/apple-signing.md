@@ -79,9 +79,13 @@ shasum -a 256 -c SHA256SUMS.txt
 
 ## 上传签名包到 GitHub Release
 
-上传入口为 `scripts/upload-release.mjs`，不依赖 `gh` 或新增 npm 包，使用 macOS 自带的 `curl`、`git` 和签名工具。先完成最终 DMG 公证、装订和 SHA-256 文件生成。GitHub 身份使用私下配置的 `GH_TOKEN` / `GITHUB_TOKEN`，或已有的 GitHub git credential helper；需要目标仓库 Contents 写权限。不要把 Token 放进参数、源码、日志或聊天。
+上传入口为 `scripts/upload-release.mjs`，使用直接声明的开发依赖 `semver` 进行版本比较，以及 macOS 自带的 `curl`、`git` 和签名工具，不依赖 `gh`。先完成最终 DMG 公证、装订和 SHA-256 文件生成。GitHub 身份使用私下配置的 `GH_TOKEN` / `GITHUB_TOKEN`，或已有的 GitHub git credential helper；需要目标仓库 Contents 写权限。不要把 Token 放进参数、源码、日志或聊天。
 
 必须显式指定仓库。版本从 `package.json` 读取，默认目录为 `release/v<版本>/notarized/`；可用 `--directory` 指定目录。`--tag` 如有指定必须匹配项目版本。脚本只上传到**已存在、公开发布且非预发布**的 Release，不创建 Release、不移动标签、不推送源码、不修改 Release 文案。
+
+上传前分页读取远端 Release，用 SemVer 找出最高正式版本，不按字符串或发布时间排序；忽略草稿、预发布、预发布版本标签及非 SemVer 标签。本地版本低于远端最高正式版本时拒绝上传；相同版本显示为更新现有资产，仍需 `--replace` 才能覆盖；更高版本仍要求目标 Release 已存在。当前上传流程只支持正式版本。
+
+默认在交互终端中要求重新输入完整目标标签（例如 `v0.7.0`）。空输入、错误版本、Ctrl+C 或输入结束均取消，不会写入远端。确认的是已经构建并通过签名校验的版本，不是重命名或改版本工具；如果要发新版本，先更新 `package.json`、重建并完成公证，不能把旧包改名冒充新版本。非交互 CI 必须同时提供 `--yes --tag v<版本>`，其他安全检查不会跳过。`--dry-run` 不提示确认，也不写入远端。
 
 ```bash
 # 只做本地签名/票据/哈希校验和远端只读检查，不上传。
@@ -92,6 +96,10 @@ npm run release:upload -- --repo OWNER/REPOSITORY
 
 # 确认替换已发布的同名安装包与校验文件。
 npm run release:upload -- --repo OWNER/REPOSITORY --replace
+# 随后输入提示中的完整标签，例如 v0.7.0；回车取消。
+
+# CI：同时指定 --yes 与匹配当前构建的 --tag；不会跳过版本比较。
+npm run release:upload -- --repo OWNER/REPOSITORY --replace --yes --tag v0.7.0
 ```
 
 若 GitHub API 返回的实际仓库与 `--repo` 不同，默认直接拒绝上传，并显示实际仓库名。确认目标后才可加 `--allow-redirect`，不要为了绕过错误盲目加此参数；公开下载验证仍使用用户指定的 URL。脚本不修改 README 下载链接或 Git remote。

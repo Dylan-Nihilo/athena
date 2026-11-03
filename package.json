@@ -88,6 +88,7 @@
     "esbuild": "^0.28.2",
     "hpsetup": "4.7.4",
     "prettier": "^3.9.10",
+    "semver": "^7.8.6",
     "tailwindcss": "4.3.3",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",

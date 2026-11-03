@@ -5,6 +5,8 @@ import { spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createInterface } from 'node:readline';
+import semver from 'semver';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const apiOrigin = 'https://api.github.com';
@@ -14,7 +16,7 @@ export function parseOptions(args, version) {
     tag: `v${version}`,
     directory: path.join(root, `release/v${version}/notarized`),
   };
-  const flags = new Set(['replace', 'allow-redirect', 'dry-run', 'help']);
+  const flags = new Set(['replace', 'allow-redirect', 'dry-run', 'yes', 'help']);
   for (let i = 0; i < args.length; i++) {
     const key = args[i].slice(2);
     if (!args[i].startsWith('--'))
@@ -31,12 +33,73 @@ export function parseOptions(args, version) {
     else throw new Error('Unknown or incomplete upload option; see --help.');
   }
   if (options.help) return options;
+  if (!semver.valid(version) || !/^\d/.test(version))
+    throw new Error('package.json version must be a valid SemVer.');
+  if (options.yes && !args.includes('--tag'))
+    throw new Error('--yes requires an explicit --tag vVERSION.');
   if (!/^[\w.-]+\/[\w.-]+$/.test(options.repo || ''))
     throw new Error('Specify --repo OWNER/REPOSITORY explicitly.');
   if (options.tag !== `v${version}`)
     throw new Error('Release tag must match package.json version.');
   options.directory = path.resolve(options.directory);
   return options;
+}
+
+export function assessVersions(version, releases) {
+  if (!semver.valid(version)) throw new Error('Invalid local SemVer.');
+  if (semver.prerelease(version))
+    throw new Error('This upload command supports stable versions only.');
+  const versions = releases
+    .filter((release) => !release.draft && !release.prerelease)
+    .map((release) => semver.valid(release.tag_name))
+    .filter((value) => value && !semver.prerelease(value));
+  const latest = versions.sort(semver.rcompare)[0] || null;
+  const comparison = latest ? semver.compare(version, latest) : null;
+  if (comparison === -1)
+    throw new Error(
+      `Local version v${version} is older than published v${latest}. Build a newer version before uploading.`,
+    );
+  return { latest, comparison };
+}
+
+export async function publishedReleases(request, base) {
+  const releases = [];
+  for (let page = 1; ; page++) {
+    const batch = await request('GET', `${base}/releases?per_page=100&page=${page}`);
+    if (!Array.isArray(batch)) throw new Error('Invalid GitHub releases response.');
+    releases.push(...batch);
+    if (batch.length < 100) return releases;
+  }
+}
+
+export async function confirmUpload({ tag, yes, dryRun, interactive, ask }) {
+  if (dryRun || yes) return;
+  if (!interactive)
+    throw new Error(
+      'Version confirmation needs an interactive terminal. For CI use --yes --tag vVERSION.',
+    );
+  const answer = await ask(`请输入目标版本 ${tag} 确认上传（直接回车取消）：`);
+  if (answer.trim() !== tag)
+    throw new Error('Version confirmation cancelled or mismatched; nothing uploaded.');
+}
+
+async function askVersion(question) {
+  const terminal = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    return await new Promise((resolve, reject) => {
+      let answered = false;
+      terminal.once('close', () => {
+        if (!answered) reject(new Error('Version confirmation cancelled; nothing uploaded.'));
+      });
+      terminal.once('SIGINT', () => terminal.close());
+      terminal.question(question, (answer) => {
+        answered = true;
+        resolve(answer);
+      });
+    });
+  } finally {
+    terminal.close();
+  }
 }
 
 export async function sha256(file) {
@@ -200,7 +263,7 @@ async function main() {
   const options = parseOptions(process.argv.slice(2), pkg.version);
   if (options.help) {
     console.log(
-      'Usage: npm run release:upload -- --repo OWNER/REPOSITORY [--replace] [--allow-redirect] [--dry-run] [--directory PATH] [--tag vVERSION]\nUploads to an EXISTING public release. Never creates a release, moves a tag, pushes code or edits release notes.\n--dry-run performs local signature/checksum checks and remote read-only checks, but uploads nothing.',
+      'Usage: npm run release:upload -- --repo OWNER/REPOSITORY [--replace] [--allow-redirect] [--dry-run] [--directory PATH] [--tag vVERSION] [--yes]\nUploads to an EXISTING public release. Never creates a release, moves a tag, pushes code or edits release notes.\nChecks SemVer against all published stable releases; older versions are refused. Type the target tag to confirm uploading. CI requires --yes --tag vVERSION.\n--dry-run performs local signature/checksum and remote read-only checks, but uploads nothing or prompts.',
     );
     return;
   }
@@ -264,6 +327,15 @@ async function main() {
       throw new Error('A public repository is required for anonymous download verification.');
     console.log(`Requested repository: ${options.repo}; actual repository: ${repo.full_name}`);
     const base = `${apiOrigin}/repos/${repo.full_name}`;
+    const assessment = assessVersions(pkg.version, await publishedReleases(request, base));
+    console.log(
+      `Local build: ${options.tag}; highest published stable version: ${assessment.latest ? `v${assessment.latest}` : '(none)'}.`,
+    );
+    console.log(
+      assessment.comparison === 0
+        ? '相同 SemVer 版本：本轮更新现有版本资产，不递增版本号。'
+        : '目标版本高于远端正式版本，或远端尚无正式版本。',
+    );
     const release = await request('GET', `${base}/releases/tags/${options.tag}`);
     if (release.draft || release.prerelease)
       throw new Error('Expected an existing, published non-prerelease release.');
@@ -277,6 +349,13 @@ async function main() {
       );
       return;
     }
+    await confirmUpload({
+      tag: options.tag,
+      yes: options.yes,
+      dryRun: options['dry-run'],
+      interactive: Boolean(process.stdin.isTTY && process.stdout.isTTY),
+      ask: askVersion,
+    });
     const runtime = path.join(root, '.runtime');
     await mkdir(runtime, { recursive: true });
     const key = createHash('sha256')

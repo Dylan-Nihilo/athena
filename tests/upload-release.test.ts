@@ -9,6 +9,9 @@ const require = createRequire(import.meta.url);
 const {
   parseOptions,
   assertRepository,
+  assessVersions,
+  publishedReleases,
+  confirmUpload,
   replaceAssets,
   localArtifacts,
   sha256,
@@ -68,6 +71,85 @@ test('upload requires an explicit repository, matching version, and explicit red
   assert.throws(() => assertRepository('old/repo', 'new/repo', false), /resolves to/);
   assert.doesNotThrow(() => assertRepository('old/repo', 'new/repo', true));
   assert.doesNotThrow(() => assertRepository('Owner/Repo', 'owner/repo', false));
+});
+
+test('SemVer comparison uses numeric precedence, not release date or lexical tag order', () => {
+  const releases = [
+    { tag_name: 'v0.9.0' },
+    { tag_name: 'v0.10.0' },
+    { tag_name: 'v0.2.0' },
+    { tag_name: 'v9.0.0', draft: true },
+    { tag_name: 'v8.0.0', prerelease: true },
+    { tag_name: 'v10.0.0-beta.1' },
+    { tag_name: 'nightly' },
+  ];
+  assert.deepEqual(assessVersions('0.10.0', releases), { latest: '0.10.0', comparison: 0 });
+  assert.deepEqual(assessVersions('1.0.0', releases), { latest: '0.10.0', comparison: 1 });
+  assert.throws(() => assessVersions('0.9.1', releases), /older than published v0.10.0/);
+  assert.deepEqual(assessVersions('0.10.0+build.2', releases), { latest: '0.10.0', comparison: 0 });
+  assert.deepEqual(assessVersions('0.1.0', []), { latest: null, comparison: null });
+  assert.throws(() => assessVersions('01.0.0', []), /Invalid/);
+  assert.throws(() => assessVersions('1.0.0-beta.1', []), /stable/);
+});
+
+test('SemVer comparison reads all release pages rather than only the first page', async () => {
+  const pages: string[] = [];
+  const releases = await publishedReleases(async (_method: string, url: string) => {
+    pages.push(url);
+    if (url.endsWith('page=1')) return Array.from({ length: 100 }, () => ({ tag_name: 'v0.1.0' }));
+    return [{ tag_name: 'v0.10.0' }];
+  }, 'https://api.github.com/repos/owner/repo');
+  assert.equal(pages.length, 2);
+  assert.equal(assessVersions('0.10.0', releases).latest, '0.10.0');
+  await assert.rejects(
+    publishedReleases(async () => ({}), '/repo'),
+    /Invalid GitHub/,
+  );
+});
+
+test('CI confirmation requires both --yes and an explicit matching --tag', () => {
+  assert.throws(() => parseOptions(['--repo', 'owner/repo', '--yes'], '0.7.0'), /explicit --tag/);
+  assert.equal(
+    parseOptions(['--repo', 'owner/repo', '--yes', '--tag', 'v0.7.0'], '0.7.0').yes,
+    true,
+  );
+  assert.throws(
+    () => parseOptions(['--repo', 'owner/repo', '--yes', '--tag', 'v0.8.0'], '0.7.0'),
+    /match/,
+  );
+});
+
+test('interactive confirmation requires retyping the exact target version', async () => {
+  const confirmation = { tag: 'v0.7.0', interactive: true, ask: async () => ' v0.7.0 ' };
+  await confirmUpload(confirmation);
+  for (const answer of ['', 'yes', 'v0.8.0', '0.7.0']) {
+    await assert.rejects(
+      confirmUpload({ ...confirmation, ask: async () => answer }),
+      /cancelled or mismatched/,
+    );
+  }
+  await assert.rejects(
+    confirmUpload({
+      ...confirmation,
+      ask: async () => {
+        throw new Error('EOF');
+      },
+    }),
+    /EOF/,
+  );
+});
+
+test('noninteractive uploads fail closed; dry-run and explicit CI confirmation never prompt', async () => {
+  const confirmation = {
+    tag: 'v0.7.0',
+    interactive: false,
+    ask: async () => {
+      throw new Error('must not prompt');
+    },
+  };
+  await assert.rejects(confirmUpload(confirmation), /interactive terminal/);
+  await confirmUpload({ ...confirmation, dryRun: true });
+  await confirmUpload({ ...confirmation, yes: true });
 });
 
 test('existing assets are never replaced without --replace', async () => {
