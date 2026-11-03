@@ -24,7 +24,8 @@
     "test:models": "tsx tests/model-usage.e2e.ts",
     "test:agent-experience": "tsx tests/agent-experience.e2e.ts",
     "package:signed": "npm run build && electron-builder --config scripts/electron-builder.signed.cjs --mac dir --arm64 --publish never",
-    "package:release": "npm run build && electron-builder --config scripts/electron-builder.release.cjs --mac dmg zip --arm64 --publish never"
+    "package:release": "npm run build && electron-builder --config scripts/electron-builder.release.cjs --mac dmg zip --arm64 --publish never",
+    "release:upload": "node scripts/upload-release.mjs"
   },
   "build": {
     "appId": "app.agent.workbench",
