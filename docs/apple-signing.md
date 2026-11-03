@@ -79,15 +79,20 @@ shasum -a 256 -c SHA256SUMS.txt
 
 ## 上传签名包到 GitHub Release
 
-上传入口为 `scripts/upload-release.mjs`，使用直接声明的开发依赖 `semver` 进行版本比较，以及 macOS 自带的 `curl`、`git` 和签名工具，不依赖 `gh`。先完成最终 DMG 公证、装订和 SHA-256 文件生成。GitHub 身份使用私下配置的 `GH_TOKEN` / `GITHUB_TOKEN`，或已有的 GitHub git credential helper；需要目标仓库 Contents 写权限。不要把 Token 放进参数、源码、日志或聊天。
+版本选择与递增使用 `bumpp`，上传入口为 `scripts/upload-release.mjs`，使用 macOS 自带的 `curl`、`git` 和签名工具，不依赖 `gh`，也不再直接依赖 `semver`。先完成最终 DMG 公证、装订和 SHA-256 文件生成。GitHub 身份使用私下配置的 `GH_TOKEN` / `GITHUB_TOKEN`，或已有的 GitHub git credential helper；需要目标仓库 Contents 写权限。不要把 Token 放进参数、源码、日志或聊天。
 
 必须显式指定仓库。版本从 `package.json` 读取，默认目录为 `release/v<版本>/notarized/`；可用 `--directory` 指定目录。`--tag` 如有指定必须匹配项目版本。脚本只上传到**已存在、公开发布且非预发布**的 Release，不创建 Release、不移动标签、不推送源码、不修改 Release 文案。
 
-上传前分页读取远端 Release，用 SemVer 找出最高正式版本，不按字符串或发布时间排序；忽略草稿、预发布、预发布版本标签及非 SemVer 标签。本地版本低于远端最高正式版本时拒绝上传；相同版本显示为更新现有资产，仍需 `--replace` 才能覆盖；更高版本仍要求目标 Release 已存在。当前上传流程只支持正式版本。
+先运行 `npm run version:bump`，由 bumpp 交互式选择 patch / minor / major 或指定版本并确认。该命令同步更新 `package.json` 和 `package-lock.json`，默认关闭自动 commit、tag、push 和版本生命周期脚本。版本变更需要自行检查、提交，然后重建安装包并完成公证。
 
-默认在交互终端中要求重新输入完整目标标签（例如 `v0.7.0`）。空输入、错误版本、Ctrl+C 或输入结束均取消，不会写入远端。确认的是已经构建并通过签名校验的版本，不是重命名或改版本工具；如果要发新版本，先更新 `package.json`、重建并完成公证，不能把旧包改名冒充新版本。非交互 CI 必须同时提供 `--yes --tag v<版本>`，其他安全检查不会跳过。`--dry-run` 不提示确认，也不写入远端。
+上传不再枚举或比较远端其他版本，也不阻止上传低于远端最高版本的安装包；只检查指定标签与本地版本、实际安装包一致，并要求该标签对应的公开正式 Release 已存在。已有同名资产仍需 `--replace` 才能覆盖。
+
+默认在交互终端中要求重新输入完整目标标签（例如 `v0.7.0`）。空输入、错误版本、Ctrl+C 或输入结束均取消，不会写入远端。确认的是已经构建并通过签名校验的版本，不是重命名或改版本工具；如果要发新版本，先更新 `package.json`、重建并完成公证，不能把旧包改名冒充新版本。非交互 CI 必须同时提供 `--yes --tag v<版本>`，签名、公证、版本一致性和哈希检查不会跳过。`--dry-run` 不提示确认，也不写入远端。
 
 ```bash
+# 交互式升版；不自动提交、打标签或推送。
+npm run version:bump
+
 # 只做本地签名/票据/哈希校验和远端只读检查，不上传。
 npm run release:upload -- --repo Dylan-Nihilo/athena --replace --dry-run
 
@@ -98,7 +103,7 @@ npm run release:upload -- --repo OWNER/REPOSITORY
 npm run release:upload -- --repo OWNER/REPOSITORY --replace
 # 随后输入提示中的完整标签，例如 v0.7.0；回车取消。
 
-# CI：同时指定 --yes 与匹配当前构建的 --tag；不会跳过版本比较。
+# CI：同时指定 --yes 与匹配当前构建的 --tag；不会跳过版本一致性检查。
 npm run release:upload -- --repo OWNER/REPOSITORY --replace --yes --tag v0.7.0
 ```
 
