@@ -92,6 +92,8 @@ npm run setup:browseros
 npm run dev
 ```
 
+Developer ID 正式签名使用 `npm run package:signed`；公证分发使用 `npm run package:release`，需要本机钥匙串公证凭据。步骤与验证见 [macOS 签名与公证](docs/apple-signing.md)。普通 `npm run package` 保持本机 ad-hoc 签名。
+
 `npm ci` 会执行 `heroui:setup`，优先恢复本机授权缓存。新环境需私下配置 `HEROUI_KEY`；不要提交密钥或完整 Pro 包。`setup:browseros` 下载并校验固定官方版本，不启动浏览器或覆盖系统安装。
 
 ```bash

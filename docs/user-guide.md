@@ -20,7 +20,7 @@ Athena 把本机 Codex 任务和 BrowserOS neo 网页工作区放在同一个 Ma
 
 普通 Chrome 不能替代 BrowserOS neo。源码开发可执行 `npm run setup:browseros` 下载并校验项目固定版本；脚本不启动浏览器，也不写入系统 Applications。
 
-当前项目采用 ad-hoc 签名，尚未配置 Developer ID 分发签名、公证或自动更新。系统提示需要由用户本人处理。
+已发布旧包可能采用 ad-hoc 签名；正式签名与公证构建见 [macOS 签名与公证](apple-signing.md)。签名和公证以具体产物验证结果为准，目前没有自动更新。系统提示需要由用户本人处理。
 
 ## 首页、对话与草稿
 
@@ -130,7 +130,7 @@ npm start
 npm run package
 ```
 
-`npm run package` 默认生成 `release/` 下的本机应用目录，分发归档与发布可下载性需要单独验证。当前配置采用 ad-hoc 签名，未配置公证或自动更新。
+`npm run package` 默认生成 `release/` 下的本机 ad-hoc 签名应用目录。`npm run package:signed` 使用 Developer ID 签名但不公证；`npm run package:release` 需要钥匙串公证凭据，生成签名和公证后的 DMG/ZIP。配置与验证见 [macOS 签名与公证](apple-signing.md)。发布上传、可下载性需要单独验证，目前没有自动更新。
 
 隔离 UI 检查可按改动选择：
 
