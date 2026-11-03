@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Avatar, Button, Description, Dropdown, Label } from '@heroui/react';
+import { TurnIcon } from './HoverIcons';
+import { Icon } from './ui';
 import {
   ChartNoAxesCombinedIcon,
   CircleDotIcon,
@@ -8,13 +8,14 @@ import {
   InternetIcon,
   MonitorIcon,
   MoonIcon,
-  PlusIcon,
   Settings02Icon,
   Sun01Icon,
   Tick02Icon,
   UnfoldMoreIcon,
 } from '@hugeicons-pro/core-stroke-rounded';
-import { Icon } from './ui';
+import { useLayoutEffect, useState } from 'react';
+import { Avatar, Button, Description, Dropdown, Label } from '@heroui/react';
+import { PromptInput } from '@heroui-pro/react';
 
 type Appearance = 'light' | 'dark' | 'system';
 const appearanceLabels: Record<Appearance, string> = {
@@ -23,7 +24,7 @@ const appearanceLabels: Record<Appearance, string> = {
   system: '跟随系统',
 };
 
-function useAppearance() {
+export function useAppearance() {
   const [appearance, setAppearance] = useState<Appearance>(() => {
     try {
       const saved = localStorage.getItem('athena.appearance');
@@ -32,7 +33,7 @@ function useAppearance() {
       return 'light';
     }
   });
-  useEffect(() => {
+  useLayoutEffect(() => {
     const media = matchMedia('(prefers-color-scheme: dark)');
     const apply = () => {
       const dark = appearance === 'dark' || (appearance === 'system' && media.matches);
@@ -54,16 +55,19 @@ function useAppearance() {
 
 export function UserMenu({
   name,
+  appearance,
+  onAppearanceChange,
   onSettings,
   onUsage,
   onWorkspace,
 }: {
   name: string;
+  appearance: Appearance;
+  onAppearanceChange: (value: Appearance) => void;
   onSettings: () => void;
   onUsage: () => void;
   onWorkspace: () => void;
 }) {
-  const [appearance, setAppearance] = useAppearance();
   const displayName = name.trim() || '本机用户';
   const initial = Array.from(displayName)[0]?.toLocaleUpperCase() || '本';
   const identity = (
@@ -120,7 +124,7 @@ export function UserMenu({
                 aria-label="外观"
                 selectionMode="single"
                 selectedKeys={new Set([appearance])}
-                onAction={(key) => setAppearance(key as Appearance)}
+                onAction={(key) => onAppearanceChange(key as Appearance)}
               >
                 {(['light', 'dark', 'system'] as const).map((value) => {
                   const icon =
@@ -157,17 +161,12 @@ export function WebContextMenu({
   onSelect: () => void;
   onRecord: () => void;
 }) {
+  const [hovered, setHovered] = useState(false);
   return (
     <Dropdown>
-      <Button
-        variant="ghost"
-        size="sm"
-        isIconOnly
-        aria-label="添加网页上下文"
-        className="web-context-trigger"
-      >
-        <Icon icon={PlusIcon} size={18} />
-      </Button>
+      <PromptInput.Action aria-label="添加网页上下文" onHoverChange={setHovered}>
+        <TurnIcon kind="plus" hovered={hovered} size={18} />
+      </PromptInput.Action>
       <Dropdown.Popover placement="top start" offset={12} className="web-context-menu">
         <p className="web-context-heading">添加网页上下文</p>
         <Dropdown.Menu

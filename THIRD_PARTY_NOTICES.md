@@ -25,10 +25,14 @@ BrowserOS neo 和 Electron 均包含 Chromium 及其他第三方组件，各组�
 | `zod`                           | 3.25.76  | [MIT](https://github.com/colinhacks/zod/blob/main/LICENSE)                                                              |
 | React、React DOM                | 19.3.1   | [MIT](https://github.com/react/react/blob/main/LICENSE)                                                                 |
 | `react-markdown`                | 10.1.0   | [MIT](https://github.com/remarkjs/react-markdown/blob/main/license)                                                     |
+| `remark-gfm`（Markdown 表格）   | 4.0.1    | [MIT](https://github.com/remarkjs/remark-gfm/blob/main/license)                                                         |
+| `shiki`（Pro 工具参数高亮）     | 4.6.0    | [MIT](resources/licenses/shiki-LICENSE.txt)                                                                             |
 | `@hugeicons/react`              | 1.1.10   | React 渲染器，[MIT](https://github.com/hugeicons/hugeicons/blob/main/packages/react/LICENSE.md) |
 | `@hugeicons-pro/core-stroke-rounded` | 4.4.0 | 通用操作图标，[HugeIcons Pro 商业许可](https://hugeicons.com/license-agreement) |
 | `qrcode`                        | 1.5.4    | [MIT](https://github.com/soldair/node-qrcode/blob/master/license)                                                       |
 | `ws`                            | 8.22.0   | [MIT](https://github.com/websockets/ws/blob/master/LICENSE)                                                             |
+
+按钮 SVG 的悬停动效改编自 [lucide-animated](https://github.com/pqoqubbw/icons/tree/4662fff2b60fdcf4751b32013606756caf7c4c26)，使用 Motion 和原生 Web Animations 播放。作者版权声明和 MIT 许可随应用保存在 [lucide-animated-LICENSE.txt](resources/licenses/lucide-animated-LICENSE.txt)。
 
 ## HeroUI 界面组件
 

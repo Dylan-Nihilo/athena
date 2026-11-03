@@ -330,7 +330,8 @@
 }
 .ei-number-box {
   display: flex;
-  align-items: baseline;
+  align-self: stretch;
+  align-items: center;
   gap: 3px;
   padding: 0 8px;
   border-inline-start: 1px solid var(--ei-edge);

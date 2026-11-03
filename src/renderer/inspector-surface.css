@@ -23,6 +23,15 @@
   border-radius: 16px;
 }
 
+.element-inspector .element-search :is(.ei-select-trigger, .ei-input, .button) {
+  height: 28px;
+  min-height: 28px;
+}
+
+.element-inspector .motion-fields :is(.ei-label, label > span) {
+  line-height: 16px;
+}
+
 .element-inspector .element-breadcrumb {
   padding-bottom: 8px;
 }
@@ -108,17 +117,16 @@
 }
 
 .element-inspector .inspector-footer .button {
-  min-height: 34px;
+  height: var(--ei-height);
+  min-height: var(--ei-height);
   border: 0;
   border-radius: 24px;
   font-size: 12px;
 }
 
 .element-inspector .inspector-footer > .icon-button {
-  width: 32px;
-  min-width: 32px;
-  height: 32px;
-  min-height: 32px;
+  width: var(--ei-height);
+  min-width: var(--ei-height);
   background: var(--ei-well);
 }
 

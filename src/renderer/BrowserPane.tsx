@@ -1,11 +1,10 @@
+import { NavigationArrow, TurnIcon } from './HoverIcons';
 import { Input, Tabs } from '@heroui/react';
 import { Segment } from '@heroui-pro/react';
 import { ChoiceSelect } from './ChoiceSelect';
 import { ActionButton, Icon } from './ui';
 import { useEffect, useRef, useState } from 'react';
 import {
-  ArrowLeft02Icon,
-  ArrowRight02Icon,
   ArrowUpRight01Icon,
   CircleIcon,
   Cursor01Icon,
@@ -13,7 +12,6 @@ import {
   EarthIcon,
   Loading02Icon,
   PlayIcon,
-  PlusIcon,
   RefreshCwIcon,
   SlidersHorizontalIcon,
   StopIcon,
@@ -117,6 +115,20 @@ export function BrowserPane({
   const expectedEpoch = useRef(state.viewport?.epoch);
   expectedEpoch.current = state.viewport?.epoch;
   const activeTab = useRef(state.activeTabId);
+  const tabList = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const list = tabList.current;
+    if (!list) return;
+    const observer = new ResizeObserver(() => {
+      const tab = list.querySelector('.is-active')?.getBoundingClientRect();
+      if (!tab) return;
+      const bounds = list.getBoundingClientRect();
+      if (tab.left < bounds.left) list.scrollLeft += tab.left - bounds.left;
+      else if (tab.right > bounds.right) list.scrollLeft += tab.right - bounds.right;
+    });
+    observer.observe(list);
+    return () => observer.disconnect();
+  }, [state.activeTabId, state.tabs?.length]);
   const surface = useRef<HTMLDivElement>(null);
   const keyboard = useRef<HTMLTextAreaElement>(null);
   const address = useRef<HTMLInputElement>(null);
@@ -470,17 +482,63 @@ export function BrowserPane({
       setTabBusy(false);
     }
   };
+  const neoStatus =
+    neo?.status === 'ready' ? '已连接' : neo?.status === 'starting' ? '连接中' : '未连接';
   return (
     <section className="browser-pane" aria-label="浏览器">
       <header className="browser-heading">
-        <div className="browser-heading-name">
-          <Icon icon={EarthIcon} size={16} />
-          <span>浏览器</span>
-          <span className="engine-label" title={neo?.error || neo?.version}>
-            Neo{' '}
-            {neo?.status === 'ready' ? '已连接' : neo?.status === 'starting' ? '连接中' : '未连接'}
-          </span>
-        </div>
+        <span className="engine-label" title={neo?.error || neo?.version || `Neo ${neoStatus}`}>
+          <span aria-hidden className={`status-dot ${neo?.status === 'ready' ? 'online' : ''}`} />
+          Neo {neoStatus}
+        </span>
+        <Tabs
+          className="browser-tabstrip"
+          selectedKey={state.activeTabId || ''}
+          onSelectionChange={(key) => {
+            setMode('page');
+            void changeTab('browser:switch-tab', String(key));
+          }}
+        >
+          <Tabs.List ref={tabList} className="browser-tabbar" aria-label="网页标签">
+            {(state.tabs ?? []).map((tab) => (
+              <Tabs.Tab
+                className={`browser-tab ${tab.id === state.activeTabId ? 'is-active' : ''}`}
+                key={tab.id}
+                id={tab.id}
+                aria-label={tab.title || '新标签页'}
+                isDisabled={tabBusy}
+              >
+                {tab.loading ? (
+                  <Icon icon={Loading02Icon} size={12} className="spin" />
+                ) : (
+                  <Icon icon={EarthIcon} size={12} />
+                )}
+                <span title={tab.url === 'about:blank' ? '新标签页' : tab.url}>
+                  {tab.title || '新标签页'}
+                </span>
+                <ActionButton
+                  className="tab-close"
+                  aria-label={`关闭标签 ${tab.title || '新标签页'}`}
+                  isDisabled={tabBusy}
+                  onPress={() => void changeTab('browser:close-tab', tab.id)}
+                >
+                  <Icon icon={XIcon} size={12} />
+                </ActionButton>
+              </Tabs.Tab>
+            ))}
+          </Tabs.List>
+          <ActionButton
+            className="icon-button new-tab-button"
+            aria-label="新建标签页"
+            title="新建标签页 ⌘ T"
+            isDisabled={!ready || tabBusy}
+            onPress={() => void newTab()}
+          >
+            {({ isHovered, isDisabled }) => (
+              <TurnIcon kind="plus" size={15} hovered={isHovered && !isDisabled} />
+            )}
+          </ActionButton>
+        </Tabs>
         <SharePanel state={share} ready={ready} onAction={onAction} />
         <ActionButton
           className="icon-button quiet"
@@ -510,52 +568,6 @@ export function BrowserPane({
           )}
         </div>
       )}
-      <Tabs
-        className="browser-tabstrip"
-        selectedKey={state.activeTabId || ''}
-        onSelectionChange={(key) => {
-          setMode('page');
-          void changeTab('browser:switch-tab', String(key));
-        }}
-      >
-        <Tabs.List className="browser-tabbar" aria-label="网页标签">
-          {(state.tabs ?? []).map((tab) => (
-            <Tabs.Tab
-              className={`browser-tab ${tab.id === state.activeTabId ? 'is-active' : ''}`}
-              key={tab.id}
-              id={tab.id}
-              aria-label={tab.title || '新标签页'}
-              isDisabled={tabBusy}
-            >
-              {tab.loading ? (
-                <Icon icon={Loading02Icon} size={12} className="spin" />
-              ) : (
-                <Icon icon={EarthIcon} size={12} />
-              )}
-              <span title={tab.url === 'about:blank' ? '新标签页' : tab.url}>
-                {tab.title || '新标签页'}
-              </span>
-              <ActionButton
-                className="tab-close"
-                aria-label={`关闭标签 ${tab.title || '新标签页'}`}
-                isDisabled={tabBusy}
-                onPress={() => void changeTab('browser:close-tab', tab.id)}
-              >
-                <Icon icon={XIcon} size={12} />
-              </ActionButton>
-            </Tabs.Tab>
-          ))}
-        </Tabs.List>
-        <ActionButton
-          className="icon-button new-tab-button"
-          aria-label="新建标签页"
-          title="新建标签页 ⌘T"
-          isDisabled={!ready || tabBusy}
-          onPress={() => void newTab()}
-        >
-          <Icon icon={PlusIcon} size={15} />
-        </ActionButton>
-      </Tabs>
       <div className="browser-navigation">
         <div className="nav-buttons">
           <ActionButton
@@ -565,7 +577,7 @@ export function BrowserPane({
             isDisabled={!ready || !state.canGoBack}
             onPress={() => void onAction('browser:back')}
           >
-            <Icon icon={ArrowLeft02Icon} size={16} />
+            {({ isHovered, isDisabled }) => <NavigationArrow hovered={isHovered && !isDisabled} />}
           </ActionButton>
           <ActionButton
             className="icon-button"
@@ -574,7 +586,9 @@ export function BrowserPane({
             isDisabled={!ready || !state.canGoForward}
             onPress={() => void onAction('browser:forward')}
           >
-            <Icon icon={ArrowRight02Icon} size={16} />
+            {({ isHovered, isDisabled }) => (
+              <NavigationArrow forward hovered={isHovered && !isDisabled} />
+            )}
           </ActionButton>
           <ActionButton
             className="icon-button"
@@ -583,7 +597,13 @@ export function BrowserPane({
             isDisabled={!ready}
             onPress={() => void onAction('browser:reload')}
           >
-            <Icon icon={RefreshCwIcon} size={15} className={busy ? 'spin' : ''} />
+            {({ isHovered, isDisabled }) =>
+              busy ? (
+                <Icon icon={RefreshCwIcon} aria-hidden size={15} className="spin" />
+              ) : (
+                <TurnIcon kind="refresh" size={15} hovered={isHovered && !isDisabled} />
+              )
+            }
           </ActionButton>
         </div>
         <form className="address-field" onSubmit={(event) => void navigate(event)}>
@@ -637,6 +657,7 @@ export function BrowserPane({
           </ActionButton>
           <ActionButton
             className={`subtle-button ${state.inspecting ? 'selected' : ''}`}
+            aria-pressed={state.inspecting}
             isDisabled={!ready}
             onPress={() => {
               setMode('page');
@@ -920,7 +941,6 @@ export function BrowserPane({
               </div>
               {recordings.length > 1 && (
                 <ChoiceSelect
-                  className="viewport-select"
                   triggerClassName="recording-select"
                   label="选择操作记录"
                   value={recording.id}

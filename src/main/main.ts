@@ -18,7 +18,7 @@ import { userInfo } from 'node:os';
 import { BrowserRuntime, discoverBrowserOS } from './browser';
 import { SharingRuntime } from './sharing';
 import { dispatchBrowserAction } from './browser-actions';
-import { CodexSession, detectAgents } from './agents';
+import { createCodexUpdateChecker, CodexSession, detectAgents } from './agents';
 import { NeoBrowserRuntime } from './neo-browser';
 import { FeishuConnector } from './feishu';
 import { TurnNotifications } from './notifications';
@@ -68,15 +68,20 @@ let usage: UsageStore;
 let onboarding: OnboardingRuntime | undefined;
 let modelCatalog: ModelOption[] | undefined;
 let modelCatalogRequest: Promise<ModelOption[]> | undefined;
+let catalogProbe: CodexSession | undefined;
+let catalogRevision = 0;
+const preDiscoverySessions = new WeakSet<CodexSession>();
 let codexConnection: CodexConnectionState = { status: 'idle' };
 let selectedConversationId: string | undefined;
 let connectionRevision = 0;
-const warming = new Map<string, Promise<CodexSession>>();
+let resetAfterTurn = false;
+const warming = new Map<string, Promise<void>>();
 let browser: BrowserRuntime;
 let sharing: SharingRuntime | undefined;
 let neo: NeoBrowserRuntime;
 let feishu: FeishuConnector;
 let agents: AgentInfo[] = [];
+const checkCodexUpdate = createCodexUpdateChecker((url, options) => net.fetch(url, options));
 let active:
   | {
       conversationId: string;
@@ -118,6 +123,12 @@ function saveUsage() {
     .catch(() => notice('用量记录未能保存，请检查本机存储空间。', 'error'));
 }
 function connectionState(state: CodexConnectionState) {
+  if (
+    state.conversationId &&
+    selectedConversationId &&
+    state.conversationId !== selectedConversationId
+  )
+    return;
   codexConnection = state;
   emit({ type: 'codex:state', state });
 }
@@ -149,12 +160,38 @@ async function listModels(refresh = false) {
   assertTaskEnvironment();
   if (!refresh && modelCatalog) return modelCatalog;
   if (modelCatalogRequest) return modelCatalogRequest;
-  const revision = connectionRevision;
+  const revision = catalogRevision;
   const request = (async () => {
-    const client = active?.session ?? (await prepareConversation(selectedConversation()));
-    const models = await client.listModels();
-    if (revision === connectionRevision && !client.isClosed) modelCatalog = models;
-    return models;
+    const workspace = store.data.settings.workspace;
+    const { path: executablePath } = codexInfo();
+    const current =
+      active?.session ??
+      (selectedConversationId ? sessions.get(selectedConversationId) : undefined);
+    const reusable =
+      current?.isReady &&
+      !preDiscoverySessions.has(current) &&
+      current.matchesConfiguration(workspace, executablePath, neo.getTools());
+    const client = reusable
+      ? current
+      : (catalogProbe = new CodexSession({
+          workspace,
+          executablePath,
+          tools: [],
+          callTool: async () => ({ isError: true, text: '模型目录连接不能执行工具' }),
+          onEvent() {},
+        }));
+    try {
+      const models = await client.listModels();
+      if (revision !== catalogRevision || client.isClosed)
+        throw new Error('模型连接已改变，请刷新重试');
+      modelCatalog = models;
+      return models;
+    } finally {
+      if (!reusable) {
+        if (catalogProbe === client) catalogProbe = undefined;
+        client.close();
+      }
+    }
   })();
   modelCatalogRequest = request;
   void request
@@ -164,30 +201,34 @@ async function listModels(refresh = false) {
     .catch(() => {});
   return request;
 }
-function resetConnections() {
-  connectionRevision++;
-  warming.clear();
+function clearModelCatalog() {
+  catalogRevision++;
+  catalogProbe?.close();
+  catalogProbe = undefined;
   modelCatalog = undefined;
   modelCatalogRequest = undefined;
+}
+function resetConnections() {
+  connectionRevision++;
+  resetAfterTurn = false;
+  clearModelCatalog();
+  warming.clear();
   const previous = [...sessions.values()];
   sessions.clear();
   for (const session of previous) session.close();
   connectionState({ status: 'idle' });
 }
-function prepareConversation(conversation: Conversation): Promise<CodexSession> {
+function prepareConversation(conversation: Conversation): Promise<void> {
   try {
     assertTaskEnvironment();
   } catch (error) {
     return Promise.reject(error);
   }
-  if (active || startingTurn) {
-    const session = sessions.get(conversation.id);
-    if (session && active?.session === session) return Promise.resolve(session);
-    return Promise.reject(new Error('当前任务进行中，切换后的对话将在空闲时连接'));
-  }
   if (conversation.workspace && conversation.workspace !== store.data.settings.workspace)
     return Promise.reject(new Error('此对话属于其他工作目录'));
   selectedConversationId = conversation.id;
+  if (active || startingTurn) return Promise.resolve();
+  if (resetAfterTurn) resetConnections();
   const pending = warming.get(conversation.id);
   if (pending) return pending;
   const existing = sessions.get(conversation.id);
@@ -198,7 +239,7 @@ function prepareConversation(conversation: Conversation): Promise<CodexSession> 
     existing.matchesConfiguration(store.data.settings.workspace, info.path, neo.getTools())
   ) {
     connectionState({ status: 'ready', conversationId: conversation.id });
-    return Promise.resolve(existing);
+    return Promise.resolve();
   }
   const revision = connectionRevision;
   connectionState({ status: 'starting', conversationId: conversation.id });
@@ -211,23 +252,21 @@ function prepareConversation(conversation: Conversation): Promise<CodexSession> 
     }
     if (quitting || revision !== connectionRevision) throw new Error('连接配置已改变');
     // A send may have started while the browser connection was being prepared.
-    if (active || startingTurn) {
-      const existing = sessions.get(conversation.id);
-      if (!existing) throw new Error('任务正在准备，连接由当前任务继续');
-      return existing;
-    }
+    if (active || startingTurn) return;
     const session = getSession(conversation, info.path, neo.getTools());
     await session.prepare(store.data.settings.modelSelection);
     if (quitting || revision !== connectionRevision || sessions.get(conversation.id) !== session)
       throw new Error('连接配置已改变');
-    if (session.sessionId) conversation.agentSessionId = session.sessionId;
-    conversation.agentToolsFingerprint = session.toolsFingerprint;
-    store.schedule();
     if (selectedConversationId === conversation.id)
       connectionState({ status: 'ready', conversationId: conversation.id });
-    return session;
   })().catch((error) => {
-    if (!quitting && revision === connectionRevision && selectedConversationId === conversation.id)
+    if (
+      !quitting &&
+      !startingTurn &&
+      !active &&
+      revision === connectionRevision &&
+      selectedConversationId === conversation.id
+    )
       connectionState({
         status: 'error',
         conversationId: conversation.id,
@@ -296,6 +335,16 @@ function onAgentEvent(conversationId: string, assistant: ChatMessage, event: Age
   }
   if (event.type === 'delta') assistant.text += event.text;
   if (event.type === 'run-started') {
+    const session = active?.session;
+    if (session?.sessionId === event.threadId) {
+      conversation.agentSessionId = event.threadId;
+      conversation.agentToolsFingerprint = session.toolsFingerprint;
+      if (session.replacedSessionId) {
+        conversation.previousAgentSessionIds = [
+          ...new Set([...(conversation.previousAgentSessionIds ?? []), session.replacedSessionId]),
+        ];
+      }
+    }
     assistant.model = event.model;
     usage.bind(assistant.id, event.threadId, event.turnId, event.model, event.baseline);
     saveUsage();
@@ -335,7 +384,7 @@ function getSession(
   conversation: Conversation,
   executablePath: string,
   tools: BrowserTool[],
-  history?: string,
+  messages = conversation.messages,
 ): CodexSession {
   let session = sessions.get(conversation.id);
   if (
@@ -357,13 +406,9 @@ function getSession(
       executablePath,
       sessionId: conversation.agentSessionId,
       sessionToolsFingerprint: conversation.agentToolsFingerprint,
-      historyForToolUpgrade:
-        history ??
-        (conversation.messages.length
-          ? JSON.stringify(
-              conversation.messages.map(({ role, text, status }) => ({ role, text, status })),
-            )
-          : undefined),
+      historyForToolUpgrade: JSON.stringify(
+        messages.map(({ role, text, status }) => ({ role, text, status })),
+      ),
       tools,
       inspectSelectedElement: (ref) => browser.getElementDetails(ref),
       callTool: async (name: string, args: unknown) => {
@@ -427,19 +472,12 @@ async function runTurn(
   if (info.authentication === 'missing')
     throw new Error('Codex 尚未登录，请在终端执行 codex login 后刷新。');
   if (!text.trim()) throw new Error('请输入任务');
+  if (resetAfterTurn) resetConnections();
   const modelSelection = store.data.settings.modelSelection
     ? { ...store.data.settings.modelSelection }
     : undefined;
   if (!conversation.messages.length) conversation.title = text.trim().split('\n')[0].slice(0, 32);
-  const visibleHistory = conversation.messages.length
-    ? JSON.stringify(
-        conversation.messages.map((message) => ({
-          role: message.role,
-          text: message.text,
-          status: message.status,
-        })),
-      )
-    : undefined;
+  const visibleHistory = conversation.messages.slice();
   const user: ChatMessage = {
     id: randomUUID(),
     role: 'user',
@@ -532,7 +570,6 @@ async function runTurn(
     const unresolved = neo.unresolvedResult(assistant.id);
     if (unresolved) throw new Error(unresolved);
     if (assistant.status === 'streaming') assistant.status = 'done';
-    if (session.sessionId) conversation.agentSessionId = session.sessionId;
     return notifications.includesSecretInput
       ? '本轮包含受保护的信息，请在 Athena 查看结果。'
       : assistant.text;
@@ -559,18 +596,15 @@ async function runTurn(
     await neo.finishTask(assistant.id, assistant.status === 'done').catch(() => {});
     if (selectedElement && !readonly)
       await browser.setElementFeedback(selectedElement.ref, null).catch(() => {});
-    if (session.sessionId) conversation.agentSessionId = session.sessionId;
-    conversation.agentToolsFingerprint = session.toolsFingerprint;
-    if (session.replacedSessionId) {
-      conversation.previousAgentSessionIds = [
-        ...new Set([...(conversation.previousAgentSessionIds ?? []), session.replacedSessionId]),
-      ];
-    }
     try {
       await store.save();
     } finally {
       active = undefined;
-      if (!quitting && selectedConversationId && selectedConversationId !== conversation.id)
+      if (
+        !quitting &&
+        selectedConversationId &&
+        (resetAfterTurn || selectedConversationId !== conversation.id)
+      )
         void prepareConversation(selectedConversation()).catch(() => {});
       emit({ type: 'conversation:updated', conversation });
       emit({
@@ -804,8 +838,12 @@ async function invoke(action: string, payload: unknown) {
         return onboarding.prepareBrowser();
       case 'onboarding:defer':
         return onboarding.defer();
-      case 'onboarding:complete':
-        return onboarding.complete();
+      case 'onboarding:complete': {
+        const state = await onboarding.complete();
+        if (state.status === 'complete' && state.coreReady)
+          void prepareConversation(selectedConversation()).catch(() => {});
+        return state;
+      }
       default:
         throw new Error('首次准备操作不受支持');
     }
@@ -844,26 +882,44 @@ async function invoke(action: string, payload: unknown) {
   switch (action) {
     case 'app:snapshot':
       return snapshot();
-    case 'agents:refresh':
+    case 'codex:update-status':
+      return checkCodexUpdate(
+        agents.find((agent) => agent.id === 'codex'),
+        payload !== undefined && record(payload).refresh === true,
+      );
+    case 'agents:refresh': {
+      const previous = agents.find((agent) => agent.id === 'codex');
       agents = await detectAgents(managedCodexPath(app.getPath('userData')));
+      const next = agents.find((agent) => agent.id === 'codex');
+      const changed =
+        previous?.path !== next?.path ||
+        previous?.version !== next?.version ||
+        previous?.authentication !== next?.authentication ||
+        previous?.available !== next?.available;
+      if (changed && !active && !startingTurn) resetConnections();
+      else {
+        if (changed) resetAfterTurn = true;
+        clearModelCatalog();
+        // Login status does not distinguish accounts using the same login method.
+        for (const session of sessions.values()) preDiscoverySessions.add(session);
+      }
       if (
         !active &&
         !startingTurn &&
         !onboarding?.blocksTasks &&
         !onboarding?.changingEnvironment
       ) {
-        resetConnections();
         void prepareConversation(selectedConversation()).catch(() => {});
       }
       return agents;
+    }
     case 'models:list':
       return listModels(payload !== undefined && record(payload).refresh === true);
     case 'conversation:prepare': {
       const conversation = getConversation(record(payload).conversationId);
-      selectedConversationId = conversation.id;
+      await prepareConversation(conversation);
       if ((active || startingTurn) && active?.conversationId !== conversation.id)
         return { status: 'idle', conversationId: conversation.id } satisfies CodexConnectionState;
-      await prepareConversation(conversation).catch(() => {});
       return codexConnection.conversationId === conversation.id
         ? codexConnection
         : ({ status: 'idle', conversationId: conversation.id } satisfies CodexConnectionState);
@@ -1245,8 +1301,8 @@ async function launch() {
     onMessage: handleFeishuMessage,
   });
   window = new BrowserWindow({
-    width: 1500,
-    height: 950,
+    width: 1200,
+    height: 740,
     minWidth: 1060,
     minHeight: 700,
     title: 'Athena',
@@ -1300,6 +1356,7 @@ app.on('before-quit', (event) => {
   if (quitting) return;
   event.preventDefault();
   quitting = true;
+  catalogProbe?.close();
   if (preparingTurn) preparingTurn.cancelled = true;
   if (active) active.cancelled = true;
   browser?.revokeAgentControl();

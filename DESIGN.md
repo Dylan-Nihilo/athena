@@ -26,9 +26,29 @@
 
 这些是 Athena 在 HeroUI 原生样式上的约定，不代表每个 HeroUI 组件的默认值。不要为了统一圆角覆盖原生焦点、禁用、加载或错误状态。
 
+## 同行控件与点击区域
+
+同一行、同一层级的操作共用一个尺寸档。先使用 HeroUI 的原生 `size`；混排按钮、输入框和选择器时，再由该行统一规定外框高度，移除子项中互相覆盖的旧尺寸。用填色、图标和文字区分主次。验收以实际可交互节点的边界为准：静止时同组高度与垂直中心的偏差均不超过 1 CSS px。仅设置 `align-items: center` 仍可能出现上下边缘不齐。
+
+| 场景                 | 尺寸与行为约定                                                                                                                                                                                                                                                                                                    |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 聊天输入工具栏       | 在受支持的桌面窗口，堆叠式 Pro `PromptInput.Action` 和 Send/Stop 为原生 `md`，Agent、模型触发器也用 `md`。四者高 36px；图标按钮为 36×36px，通用 SVG 16px。Agent 触发器优先显示服务原色标识，完整名称放在菜单和辅助描述里；模型触发器保留名称及所选档位。浏览器分栏展开、显示推理档位或切换发送/停止时仍用同一档。 |
+| 主工作台与本机浏览器 | 顶栏可点击的连接状态与浏览器开关同高 34px。导航行的后退、前进、刷新为 34×34px，与地址框外壳对齐。浏览器工具行的分段组**外壳**与旁边按钮同高 32px；其内部 28px 选项、地址框内的提交键、标签页内的关闭键是嵌套控件，按各自容器居中。独占一行的操作记录选择器用普通字段高度 34px；底部缩放选择器才用紧凑的 22px。    |
+| 共享主持人和访客     | 邀请链接与复制按钮、参与者权限与交接/移除按钮使用 34px。访客地址框与导航按钮共用该行高度：桌面 34px，宽度不超过 700px 时 36px。纯图标导航按钮保持正方形。查看者、等待许可和撤权状态只改变可操作性或可见性。                                                                                                       |
+| 主检查器与共享检查器 | 紧凑查找行的选择器、输入框和查找按钮均为 28px；常规参数和底部撤销/源码/预览操作复用 `--ei-height`（34px）。带标题的并列字段还要统一标签行高，保证字段中心对齐。滑轨、拇指和数值输入区分别测量；数字旁的留白、单位以及整行高度都应能把焦点交给数值输入框。                                                         |
+| 设置、用量与人工请求 | 模型弹层的刷新/关闭、审批的批准/拒绝、提问的提交/停止分别保持组内 32px。用量筛选器同高 34px，明细标签同高 32px。飞书扫码的打开/取消按钮间隔 8px；凭据折叠入口由 `summary` 自身提供至少 32px 的点击高度。用量的估算说明把留白放进 `Disclosure.Trigger`，点击可见标题行边缘也能展开。                               |
+
+混排字段行的 34px 使用 [theme.css](src/renderer/theme.css) 的 `--control-row-height`。图标按钮的宽、高和命中区域一起验收，不通过横向挤压或拉伸 SVG 补差；状态点、徽标和帮助文字无需与按钮等高。可点击留白使用原生 button、label、summary 或组件原生 trigger 承接，保留 Tab 顺序、焦点和键盘激活。
+
+**窄宽与状态验收。** 在宽桌面及 1060px 最小应用窗口各看一次，并在分栏展开时用长模型名、推理档位和多行草稿复验。浏览器从窗口顶边独占右列，标签、地址和网页工具分三行排列。默认平分两栏，宽窗口中浏览器初始宽度不超过 620px。拖动分隔线时为任务栏保留至少 420px，长模型名优先省略，发送或停止按钮与左侧工具保持同排。相邻控件不得重叠，草稿首行与发送/停止按钮都应可点。共享访客另验 390px 视口。按实际显示行比较中心线，不把合理的换行判为错位。
+
+用实际 renderer 的 `getBoundingClientRect()` 量触发器外框与内部图标，再从边缘内侧点击验证命中；Retina 截图的物理像素和阴影不计入外框。覆盖默认、选中、禁用、聚焦及长内容状态，保留 HeroUI 原生按压动画。聊天与折叠行的回归入口分别见 [首页 UI 检查](tests/homepage-ui.e2e.ts) 和 [用量 UI 检查](tests/usage-currency-ui.e2e.ts)。
+
+工具栏悬停动效由整个 HeroUI 按钮的 hover 状态触发，只变化图标笔画或朝向，保持命中框、文字和焦点环稳定。加号转半圈，前进/后退短暂收回箭杆并回位，刷新图标轻转一次；持续旋转保留给加载状态。触屏、禁用及减少动态效果时跳过悬停动效。Agent 和模型下拉箭头随按钮真实的展开状态转向，关闭后回正；减少动态效果时直接显示最终方向。
+
 ## 组件库与版本
 
-优先复用现有 HeroUI/Pro 组件、项目包装和平台能力；不为已有控件再造组件库或添加依赖。以下版本来自当前 [package.json](package.json)，精确安装结果以 `package-lock.json` 为准。
+交互控件以 HeroUI Pro 为基准。有等价 Pro 控件时直接使用；业务专用控件组合 Pro 的原生 slots 和 HeroUI 基础组件。保留组件自带的按压、键盘、焦点、展开和禁用反馈。以下版本来自当前 [package.json](package.json)，精确安装结果以 `package-lock.json` 为准。
 
 | 依赖                              | 当前声明        |
 | --------------------------------- | --------------- |
@@ -47,20 +67,20 @@ HeroUI Pro 需要有效商业授权。沿用项目安装脚本和授权缓存，
 
 ## 实际组件映射
 
-| 表面                     | 代码入口                                                                                                                                          | 已复用的组件或能力                                                         |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| 应用壳、侧栏、对话与输入 | [App.tsx](src/renderer/App.tsx)                                                                                                                   | Pro Sidebar、PromptInput、ChatMessage；HeroUI Tabs、Card                   |
-| 本机用户菜单、网页上下文 | [HomeMenus.tsx](src/renderer/HomeMenus.tsx)                                                                                                       | Avatar、Dropdown、Button                                                   |
-| 当前工作区对话搜索       | [ConversationSearch.tsx](src/renderer/ConversationSearch.tsx)                                                                                     | Pro Command；真实标题和消息过滤                                            |
-| 首次配置与继续准备       | [Onboarding.tsx](src/renderer/Onboarding.tsx)                                                                                                     | 连续对话记录、HeroUI 操作与状态表面、真实宿主准备流程                      |
-| 模型与推理强度           | [ModelPicker.tsx](src/renderer/ModelPicker.tsx)                                                                                                   | Popover、Slider、ChoiceSelect                                              |
-| 通用选择与工具按钮       | [ChoiceSelect.tsx](src/renderer/ChoiceSelect.tsx)、[ui.tsx](src/renderer/ui.tsx)                                                                  | Select/ListBox、Button/Tooltip                                             |
-| 执行、计划、核对与产物   | [ExecutionPanel.tsx](src/renderer/ExecutionPanel.tsx)                                                                                             | Pro ListView、Disclosure、Button                                           |
-| 审批与结构化回答         | [RequestPanel.tsx](src/renderer/RequestPanel.tsx)                                                                                                 | RadioGroup、Input、TextArea、ActionButton                                  |
-| 用量与价格依据           | [UsagePanel.tsx](src/renderer/UsagePanel.tsx)                                                                                                     | Card、Tabs、Disclosure、ChoiceSelect                                       |
-| 浏览器画面与工具栏       | [BrowserPane.tsx](src/renderer/BrowserPane.tsx)                                                                                                   | Pro Segment、HeroUI Tabs；现有帧与输入链路                                 |
-| 共享主持人及访客         | [SharePanel.tsx](src/renderer/SharePanel.tsx)、[SharedPage.tsx](src/renderer/SharedPage.tsx)、[SharedSurface.tsx](src/renderer/SharedSurface.tsx) | Modal、Input、ChoiceSelect；真实共享状态与画面                             |
-| 元素检查与调整           | [ElementInspector.tsx](src/renderer/ElementInspector.tsx)、[ElementControls.tsx](src/renderer/ElementControls.tsx)                                | [独立元素控件库](packages/element-inspector/README.md)、受约束的 A2UI 控件 |
+| 表面                     | 代码入口                                                                                                                                          | 已复用的组件或能力                                                                            |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| 应用壳、侧栏、对话与输入 | [App.tsx](src/renderer/App.tsx)                                                                                                                   | Pro Sidebar、PromptInput、PromptSuggestion、ChatAttachment、ChatMessage 与 ChatMessageActions |
+| 本机用户菜单、网页上下文 | [HomeMenus.tsx](src/renderer/HomeMenus.tsx)                                                                                                       | Avatar、Dropdown、Button                                                                      |
+| 当前工作区对话搜索       | [ConversationSearch.tsx](src/renderer/ConversationSearch.tsx)                                                                                     | Pro Command；真实标题和消息过滤                                                               |
+| 首次配置与继续准备       | [Onboarding.tsx](src/renderer/Onboarding.tsx)                                                                                                     | 连续对话记录、HeroUI 操作与状态表面、真实宿主准备流程                                         |
+| 模型与推理强度           | [ModelPicker.tsx](src/renderer/ModelPicker.tsx)                                                                                                   | 单层 Popover、ListBox 与带动态刻度的 Slider                                                                 |
+| 通用选择与工具按钮       | [ChoiceSelect.tsx](src/renderer/ChoiceSelect.tsx)、[ui.tsx](src/renderer/ui.tsx)                                                                  | Select/ListBox、Button/Tooltip                                                                |
+| 执行、计划、核对与产物   | [ExecutionPanel.tsx](src/renderer/ExecutionPanel.tsx)                                                                                             | Pro Timeline、ChatTool；HeroUI Disclosure、Button                                             |
+| 审批与结构化回答         | [RequestPanel.tsx](src/renderer/RequestPanel.tsx)                                                                                                 | Pro RadioButtonGroup；HeroUI Card、Chip、Input、TextArea、Button                              |
+| 用量与价格依据           | [UsagePanel.tsx](src/renderer/UsagePanel.tsx)                                                                                                     | Card、Tabs、Disclosure、ChoiceSelect                                                          |
+| 浏览器画面与工具栏       | [BrowserPane.tsx](src/renderer/BrowserPane.tsx)                                                                                                   | Pro Segment、HeroUI Tabs；现有帧与输入链路                                                    |
+| 共享主持人及访客         | [SharePanel.tsx](src/renderer/SharePanel.tsx)、[SharedPage.tsx](src/renderer/SharedPage.tsx)、[SharedSurface.tsx](src/renderer/SharedSurface.tsx) | Modal、Input、ChoiceSelect；真实共享状态与画面                                                |
+| 元素检查与调整           | [ElementInspector.tsx](src/renderer/ElementInspector.tsx)、[ElementControls.tsx](src/renderer/ElementControls.tsx)                                | [独立元素控件库](packages/element-inspector/README.md)、受约束的 A2UI 控件                    |
 
 支撑样式分别位于 [agent-experience.css](src/renderer/agent-experience.css)、[model-controls.css](src/renderer/model-controls.css)、[usage-currency.css](src/renderer/usage-currency.css)、[sharing.css](src/renderer/sharing.css) 和 [inspector-surface.css](src/renderer/inspector-surface.css)。
 

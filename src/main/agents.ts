@@ -5,12 +5,14 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { promisify } from 'node:util';
+import { setTimeout as delay } from 'node:timers/promises';
 import { createHash } from 'node:crypto';
 import type {
   AgentEvent,
   AgentId,
   AgentInfo,
   BrowserTool,
+  CodexUpdateStatus,
   ElementDetails,
   ElementRef,
   ToolCall,
@@ -82,6 +84,20 @@ export function cliEnvironment(executable: string): NodeJS.ProcessEnv {
   return env;
 }
 
+const probeLimits = { timeout: 2500, killSignal: 'SIGKILL' as const, maxBuffer: 64 * 1024 };
+
+async function readCliVersion(executable: string): Promise<string> {
+  const { stdout } = await execFileAsync(executable, ['--version'], {
+    ...probeLimits,
+    env: cliEnvironment(executable),
+  });
+  return stdout
+    .replace(/\x1b\[[0-9;]*m/g, '')
+    .trim()
+    .split('\n')[0]
+    .slice(0, 120);
+}
+
 export async function detectAgents(codexFallback?: string): Promise<AgentInfo[]> {
   const directories = await executableDirectories();
   return Promise.all(
@@ -105,25 +121,15 @@ export async function detectAgents(codexFallback?: string): Promise<AgentInfo[]>
         path: executable,
         authentication: 'unknown',
       };
-      const probeOptions = {
-        timeout: 2500,
-        killSignal: 'SIGKILL' as const,
-        maxBuffer: 64 * 1024,
-        env: cliEnvironment(executable),
-      };
+      const probeOptions = { ...probeLimits, env: cliEnvironment(executable) };
       const [version, login] = await Promise.allSettled([
-        execFileAsync(executable, ['--version'], probeOptions),
+        readCliVersion(executable),
         id === 'codex'
           ? execFileAsync(executable, ['login', 'status'], probeOptions)
           : Promise.resolve(undefined),
       ]);
       if (version.status === 'fulfilled') {
-        const { stdout } = version.value;
-        info.version = stdout
-          .replace(/\x1b\[[0-9;]*m/g, '')
-          .trim()
-          .split('\n')[0]
-          ?.slice(0, 120);
+        info.version = version.value;
       } else {
         info.available = false;
         info.detail = '已找到 CLI，但未能在 2.5 秒内正常启动；请在终端检查后刷新';
@@ -147,10 +153,7 @@ export async function detectAgents(codexFallback?: string): Promise<AgentInfo[]>
       if (id === 'codex' && !info.available && codexFallback && executable !== codexFallback) {
         try {
           await access(codexFallback, constants.X_OK);
-          const fallback = await execFileAsync(codexFallback, ['--version'], {
-            ...probeOptions,
-            env: cliEnvironment(codexFallback),
-          });
+          const fallbackVersion = await readCliVersion(codexFallback);
           const login = await execFileAsync(codexFallback, ['login', 'status'], {
             ...probeOptions,
             env: cliEnvironment(codexFallback),
@@ -163,7 +166,7 @@ export async function detectAgents(codexFallback?: string): Promise<AgentInfo[]>
             ...info,
             available: true,
             path: codexFallback,
-            version: fallback.stdout.trim().split('\n')[0]?.slice(0, 120),
+            version: fallbackVersion,
             authentication: /not logged in|not authenticated/i.test(status)
               ? 'missing'
               : login.successful && /logged in/i.test(status)
@@ -178,6 +181,90 @@ export async function detectAgents(codexFallback?: string): Promise<AgentInfo[]>
       return info;
     }),
   );
+}
+
+type FetchRelease = (url: string, options: RequestInit) => Promise<Response>;
+
+const versionCore = String.raw`(?:0|[1-9]\d*)(?:\.(?:0|[1-9]\d*)){2}`;
+const codexVersionPattern = new RegExp(
+  `^codex-cli (${versionCore})(-(?:alpha|beta)(?:\\.\\d+)*)?$`,
+);
+const stableTagPattern = new RegExp(`^rust-v(${versionCore})$`);
+
+async function latestCodexRelease(fetchRelease: FetchRelease): Promise<string | undefined> {
+  try {
+    const response = await fetchRelease('https://releases.openai.com/codex/channels/latest', {
+      credentials: 'omit',
+      redirect: 'error',
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) return;
+    const tag: unknown = (await response.json())?.tag_name;
+    if (typeof tag === 'string' && tag.length < 80) return stableTagPattern.exec(tag)?.[1];
+  } catch {
+    // The stable channel may be unavailable offline.
+  }
+}
+
+export function createCodexUpdateChecker(fetchRelease: FetchRelease, readVersion = readCliVersion) {
+  let release: { result: Promise<string | undefined>; expiresAt?: number } | undefined;
+  let installed:
+    | {
+        path: string;
+        detectedVersion?: string;
+        result: Promise<string | undefined>;
+        completed: boolean;
+      }
+    | undefined;
+  let nextProbe = 0;
+  return async (codex: AgentInfo | undefined, refresh = false): Promise<CodexUpdateStatus> => {
+    const unknown = { status: 'unknown' } as const;
+    if (codex?.id !== 'codex' || !codex.available || !codex.path) {
+      installed = undefined;
+      return unknown;
+    }
+    // Launchers can update the underlying binary without changing their own inode.
+    if (
+      !installed ||
+      installed.completed ||
+      installed.path !== codex.path ||
+      installed.detectedVersion !== codex.version
+    ) {
+      const executable = codex.path;
+      const wait = Math.max(0, nextProbe - Date.now());
+      const result = (async () => {
+        if (wait) await delay(wait);
+        nextProbe = Date.now() + 1000;
+        return readVersion(executable);
+      })().catch(() => undefined);
+      installed = { path: executable, detectedVersion: codex.version, result, completed: false };
+    }
+    const probe = installed;
+    const installedText = await probe.result;
+    probe.completed = true;
+    const parsed = installedText && codexVersionPattern.exec(installedText);
+    if (!parsed || installed !== probe) return unknown;
+    if (
+      !release ||
+      (release.expiresAt !== undefined && (refresh || Date.now() >= release.expiresAt))
+    ) {
+      const result = latestCodexRelease(fetchRelease);
+      release = { result };
+      void result.then((version) => {
+        if (release?.result === result)
+          release.expiresAt = Date.now() + (version ? 6 * 60 * 60_000 : 10 * 60_000);
+      });
+    }
+    const latestVersion = await release.result;
+    if (!latestVersion || installed !== probe) return unknown;
+    const comparison = latestVersion.localeCompare(parsed[1], 'en', { numeric: true });
+    return {
+      status: comparison > 0 || (comparison === 0 && parsed[2]) ? 'available' : 'current',
+      installedVersion: parsed[1] + (parsed[2] ?? ''),
+      latestVersion,
+      releaseUrl: `https://github.com/openai/codex/releases/tag/rust-v${latestVersion}`,
+    };
+  };
 }
 
 type RpcId = string | number;
@@ -513,6 +600,12 @@ export class CodexSession {
         if (!isText(response.turn?.id, 256)) throw new Error('Codex 未返回有效任务 ID');
         run.turnId = response.turn.id;
         this.knownTurns.add(run.turnId!);
+        if (this.newThread) {
+          this.replacedThreadId = this.adoptedThreadId;
+          this.adoptedThreadId = this.threadId;
+          this.adoptedFingerprint = this.currentToolsFingerprint;
+          this.upgradeHistory = undefined;
+        }
         this.newThread = false;
         this.emit({
           type: 'run-started',
@@ -522,12 +615,6 @@ export class CodexSession {
           baseline,
         });
         run.startingTurn = false;
-        if (history) {
-          this.replacedThreadId = this.adoptedThreadId;
-          this.adoptedThreadId = this.threadId;
-          this.adoptedFingerprint = this.currentToolsFingerprint;
-          this.upgradeHistory = undefined;
-        }
         const deferred = run.deferredMessages.splice(0);
         for (const message of deferred) {
           if (this.active !== run) break;
@@ -647,6 +734,23 @@ export class CodexSession {
     this.options.onEvent(event);
   }
 
+  private async inspectEmptyThread(threadId: string): Promise<'empty' | 'not-loaded'> {
+    try {
+      const { thread } = await this.request('thread/read', { threadId, includeTurns: true });
+      if (thread?.id === threadId && Array.isArray(thread.turns) && !thread.turns.length)
+        return 'empty';
+    } catch (error) {
+      if (
+        isObject(error) &&
+        error.code === -32600 &&
+        error.message === `thread not loaded: ${threadId}`
+      )
+        return 'not-loaded';
+      throw new Error(`无法核验旧会话，原会话已保留。请新建对话或重试：${messageOf(error)}`);
+    }
+    throw new Error('本机没有可见对话历史，无法确认旧会话为空。原会话已保留，请新建对话。');
+  }
+
   private start(): Promise<void> {
     if (this.startup) return this.startup;
     const current = () => !this.closed;
@@ -654,14 +758,23 @@ export class CodexSession {
       if (!current()) throw new Error('Codex 连接已停止');
     };
     this.startup = (async () => {
+      const savedId = this.options.sessionId;
       const upgrading =
-        !!this.options.sessionId &&
-        this.options.sessionToolsFingerprint !== this.currentToolsFingerprint;
-      if (upgrading) {
+        !!savedId && this.options.sessionToolsFingerprint !== this.currentToolsFingerprint;
+      // Older Athena builds persisted IDs during prewarm, before any messages existed.
+      const savedEmpty =
+        this.options.historyForToolUpgrade === '[]' &&
+        /^[a-f0-9]{64}$/.test(this.options.sessionToolsFingerprint ?? '');
+      let confirmMissingRollout = false;
+      if (upgrading && savedEmpty) {
+        await this.connect();
+        checkCurrent();
+        confirmMissingRollout = (await this.inspectEmptyThread(savedId)) === 'not-loaded';
+      } else if (upgrading) {
         const history = this.options.historyForToolUpgrade;
         if (!isText(history, 200_000))
           throw new Error(
-            '此对话的浏览器工具需要升级。原会话已保留；需要已保存的可见对话历史才能继续，不能直接替换旧会话。',
+            '此对话的浏览器工具需要升级。原会话已保留；需要已保存的可见对话历史才能继续，请新建对话或恢复可见历史后重试。',
           );
         let messages: unknown;
         try {
@@ -682,7 +795,7 @@ export class CodexSession {
           !messages.some((message) => message.text.trim())
         )
           throw new Error(
-            '工具升级需要包含 role 和 text 的可见对话记录，当前历史格式无效或为空。原会话未替换。',
+            '工具升级需要包含 role 和 text 的可见对话记录，当前历史格式无效或为空。原会话未替换，请新建对话。',
           );
         this.upgradeHistory = JSON.stringify(
           messages.map(({ role, text, status }) => ({
@@ -712,19 +825,32 @@ export class CodexSession {
         },
         developerInstructions: DEVELOPER_INSTRUCTIONS,
       };
-      let response: JsonObject;
-      if (this.options.sessionId && !upgrading) {
+      let response: JsonObject = {};
+      let startFresh = !savedId || upgrading;
+      if (savedId && (!upgrading || confirmMissingRollout)) {
         try {
           // Dynamic tools are persisted by Codex; ThreadResumeParams has no dynamicTools field.
           response = await this.request(
             'thread/resume',
-            { ...threadOptions, threadId: this.options.sessionId, excludeTurns: true },
+            { ...threadOptions, threadId: savedId, excludeTurns: true },
             60000,
           );
+          if (confirmMissingRollout)
+            throw new Error('旧会话仍可恢复，但不能核验其历史。原会话已保留');
         } catch (error) {
-          throw new Error(`无法恢复 Codex 会话，请新建对话后重试：${messageOf(error)}`);
+          if (
+            !savedEmpty ||
+            !isObject(error) ||
+            error.code !== -32600 ||
+            error.message !== `no rollout found for thread id ${savedId}`
+          )
+            throw new Error(`无法恢复 Codex 会话，请新建对话后重试：${messageOf(error)}`);
+          if (!confirmMissingRollout) await this.inspectEmptyThread(savedId);
+          startFresh = true;
         }
-      } else {
+      }
+      if (startFresh) {
+        checkCurrent();
         response = await this.request(
           'thread/start',
           {
@@ -752,9 +878,9 @@ export class CodexSession {
       this.threadId = response.thread.id;
       this.rolloutPath =
         typeof response.thread.path === 'string' ? response.thread.path : undefined;
-      this.newThread = !this.options.sessionId || upgrading;
+      this.newThread = startFresh;
       this.acceptModel(response, selection);
-      if (!upgrading) {
+      if (!this.newThread) {
         this.adoptedThreadId = this.threadId;
         this.adoptedFingerprint = this.currentToolsFingerprint;
       }
@@ -951,7 +1077,11 @@ export class CodexSession {
       clearTimeout(request.timer);
       this.pending.delete(message.id);
       if (message.error)
-        request.reject(new Error(messageOf(message.error.message ?? 'Codex 请求失败')));
+        request.reject(
+          Object.assign(new Error(messageOf(message.error.message ?? 'Codex 请求失败')), {
+            code: message.error.code,
+          }),
+        );
       else request.resolve(message.result);
       return;
     }

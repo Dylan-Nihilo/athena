@@ -31,7 +31,7 @@ function Fixture(){
    React.createElement('h2',null,'查找方式'),
    React.createElement('div',{className:'fixture-row'},React.createElement(HugeiconsIcon,{icon:Search01Icon,size:13,'aria-hidden':true}),
     React.createElement(ChoiceSelect,{label:'通用查找方式',value:choice,onChange:setChoice,options}))),
-  React.createElement('section',{className:'compact-package'},
+  React.createElement('section',{className:'compact-package element-inspector'},
    React.createElement('h2',null,'查找页面'),
    React.createElement('div',{className:'element-search'},React.createElement(HugeiconsIcon,{icon:Search01Icon,size:13,'aria-hidden':true}),
     React.createElement(InspectorSelect,{label:'组件查找方式',value:inspector,onChange:setInspector,options}),

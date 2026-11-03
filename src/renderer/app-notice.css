@@ -1,0 +1,77 @@
+.app-notice {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 8px;
+  width: auto;
+  margin: 0 12px 6px;
+  padding: 8px 8px 8px 12px;
+  border-radius: var(--field-radius);
+  background: var(--surface-secondary);
+  box-shadow: none;
+}
+.app-notice .alert__indicator {
+  padding: 0;
+  color: var(--secondary);
+}
+.app-notice .alert__content {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.app-notice .alert__title,
+.app-notice .alert__description {
+  margin: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+}
+.app-notice .alert__title {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 550;
+  -webkit-line-clamp: 2;
+}
+.app-notice .alert__description {
+  color: var(--muted);
+  font-size: 12px;
+  -webkit-line-clamp: 2;
+}
+.app-notice .button {
+  height: 32px;
+  min-height: 32px;
+}
+.app-notice-action {
+  min-width: 0;
+  max-width: 9em;
+  padding-inline: 12px;
+  font-size: 12px;
+}
+.app-notice-action span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app-notice-dismiss {
+  width: 32px;
+  min-width: 32px;
+  padding: 0;
+  color: var(--muted);
+}
+.workbench-notices {
+  flex: none;
+}
+.cli-version-value {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.cli-version-value .button {
+  min-height: 32px;
+  color: var(--secondary);
+}

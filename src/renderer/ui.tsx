@@ -34,7 +34,7 @@ export function ActionButton({
   );
   const label = title || (iconOnly ? props['aria-label'] : undefined);
   return label ? (
-    <Tooltip delay={500}>
+    <Tooltip delay={500} closeDelay={0}>
       {button}
       <Tooltip.Content>{label}</Tooltip.Content>
     </Tooltip>

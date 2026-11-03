@@ -47,7 +47,7 @@ export function NumericEntry({
   };
   return (
     <>
-      <div className="ei-number-box" title={hint}>
+      <label className="ei-number-box" title={hint}>
         <input
           id={id}
           type="number"
@@ -78,7 +78,7 @@ export function NumericEntry({
           }}
         />
         {unit && <span aria-hidden>{unit}</span>}
-      </div>
+      </label>
       {invalid && (
         <small id={errorId} className="ei-error" role="status">
           请输入 {min}–{max}

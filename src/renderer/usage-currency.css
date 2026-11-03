@@ -44,7 +44,6 @@
   margin-top: 24px;
   border: 0;
   border-radius: 16px;
-  padding: 14px 16px;
   background: var(--surface-secondary);
 }
 .usage-pricing-details .disclosure__trigger {
@@ -52,9 +51,14 @@
   align-items: center;
   justify-content: space-between;
   width: 100%;
+  padding: 14px 16px;
+  border-radius: inherit;
   gap: 12px;
   color: var(--secondary);
   font-size: 12px;
+}
+.usage-pricing-details .disclosure__body {
+  padding: 0 16px 14px;
 }
 .usage-pricing-details p {
   color: var(--muted);

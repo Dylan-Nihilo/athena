@@ -3,8 +3,13 @@ import { test } from 'node:test';
 import { mkdtemp, writeFile, chmod, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { CodexSession, browserToolsFingerprint, detectAgents } from '../src/main/agents.ts';
-import type { AgentEvent, ElementDetails, ToolResult } from '../src/shared/types.ts';
+import {
+  CodexSession,
+  browserToolsFingerprint,
+  createCodexUpdateChecker,
+  detectAgents,
+} from '../src/main/agents.ts';
+import type { AgentEvent, AgentInfo, ElementDetails, ToolResult } from '../src/shared/types.ts';
 
 async function fixture(
   options: {
@@ -49,6 +54,12 @@ readline.createInterface({input:process.stdin}).on('line', line => {
   ],nextCursor:p.cursor ? null : 'page-2'}});
   if (request.method === 'thread/start' && options.modelProtocol) return send({id:request.id,result:{thread:{id:'thread-1'},model:p.model,reasoningEffort:p.config?.model_reasoning_effort}});
   if (request.method === 'thread/start') return setTimeout(()=>send({id:request.id,result:{thread:{id:'thread-1'}}}),options.threadStartDelayMs||0);
+  if (p.threadId?.startsWith('no-rollout-')) {
+    const missing='no rollout found for thread id '+p.threadId;
+    if(request.method==='thread/read') return send({id:request.id,error:{code:-32600,message:p.threadId==='no-rollout-auth'?'Permission denied':'thread not loaded: '+p.threadId}});
+    if(request.method==='thread/resume') return send({id:request.id,error:{code:p.threadId==='no-rollout-code'?-32000:-32600,message:p.threadId==='no-rollout-wrong-id'?'no rollout found for thread id different':missing}});
+  }
+  if (request.method === 'thread/read') return send({id:request.id,result:{thread:{id:p.threadId,turns:p.threadId==='unused-warmed-thread'?[]:[{id:'existing-turn'}]}}});
   if (request.method === 'thread/resume') return p.threadId==='thread-1' ? send({id:request.id,result:{thread:{id:'thread-1'}}}) : send({id:request.id,error:{code:-32602,message:'Thread not found'}});
   if (request.method === 'turn/start') {
     current='turn-'+(++turn); mode=p.input[0].text.split('\\n')[0];
@@ -215,7 +226,7 @@ test('preparing a session initializes once without a model turn and is reused by
   assert.equal(prepared.filter((r) => r.method === 'initialize').length, 1);
   assert.equal(prepared.filter((r) => r.method === 'thread/start').length, 1);
   assert.equal(prepared.filter((r) => r.method === 'turn/start').length, 0);
-  assert.equal(agent.sessionId, 'thread-1');
+  assert.equal(agent.sessionId, undefined, 'a prewarm has no accepted turn to persist');
   await agent.send('hello');
   await agent.send('hello again');
   const sent = await f.requests();
@@ -961,6 +972,108 @@ test('unknown tool versions require visible history and never silently replace t
   assert.deepEqual(await f.requests(), []);
 });
 
+test('a saved empty prewarm can upgrade without injecting the first prompt as history', async (t) => {
+  const f = await fixture();
+  const agent = session(f, [], undefined, 'unused-warmed-thread', {
+    sessionToolsFingerprint: browserToolsFingerprint([]),
+    historyForToolUpgrade: '[]',
+  });
+  t.after(() => {
+    agent.close();
+    return f.cleanup();
+  });
+  await Promise.all([agent.prepare(), agent.prepare()]);
+  assert.equal(agent.sessionId, 'unused-warmed-thread');
+  await agent.send('First real task');
+  const requests = await f.requests();
+  assert.deepEqual(
+    requests.filter((r) => r.method === 'thread/read').map((r) => r.params),
+    [{ threadId: 'unused-warmed-thread', includeTurns: true }],
+  );
+  assert.equal(requests.filter((r) => r.method === 'thread/start').length, 1);
+  assert.equal(
+    requests.some((r) => r.method === 'thread/resume'),
+    false,
+  );
+  assert.deepEqual(
+    requests.filter((r) => r.method === 'turn/start').map((r) => r.params.input[0].text),
+    ['First real task'],
+  );
+  assert.equal(agent.sessionId, 'thread-1');
+  assert.equal(agent.replacedSessionId, 'unused-warmed-thread');
+});
+
+test('an identified empty prewarm with no rollout recovers across both matching and changed tools', async (t) => {
+  for (const changed of [false, true]) {
+    const f = await fixture();
+    const agent = session(f, [], undefined, 'no-rollout-test', {
+      ...(changed ? { sessionToolsFingerprint: browserToolsFingerprint([]) } : {}),
+      historyForToolUpgrade: '[]',
+    });
+    t.after(() => {
+      agent.close();
+      return f.cleanup();
+    });
+    await agent.prepare();
+    const before = await f.requests();
+    assert.equal(agent.sessionId, 'no-rollout-test');
+    assert.equal(before.filter((r) => r.method === 'thread/read').length, 1);
+    assert.equal(before.filter((r) => r.method === 'thread/resume').length, 1);
+    assert.equal(before.filter((r) => r.method === 'thread/start').length, 1);
+    assert.equal(
+      before.some((r) => r.method === 'turn/start'),
+      false,
+    );
+    await agent.send('First real task');
+    assert.equal(agent.replacedSessionId, 'no-rollout-test');
+    assert.equal(agent.sessionId, 'thread-1');
+  }
+});
+
+test('unrelated CLI errors, unknown fingerprints, and nonempty history cannot trigger missing-rollout recovery', async (t) => {
+  for (const [id, overrides] of [
+    ['no-rollout-auth', {}],
+    ['no-rollout-code', {}],
+    ['no-rollout-wrong-id', {}],
+    ['no-rollout-test', { sessionToolsFingerprint: undefined }],
+    [
+      'no-rollout-test',
+      { historyForToolUpgrade: JSON.stringify([{ role: 'user', text: 'Keep this turn' }]) },
+    ],
+  ] as const) {
+    const f = await fixture();
+    const agent = session(f, [], undefined, id, { historyForToolUpgrade: '[]', ...overrides });
+    t.after(() => {
+      agent.close();
+      return f.cleanup();
+    });
+    await assert.rejects(agent.prepare());
+    assert.equal(agent.sessionId, id);
+    assert(
+      !(await f.requests()).some((r) => r.method === 'thread/start' || r.method === 'turn/start'),
+    );
+  }
+});
+
+test('empty local history does not authorize replacing a CLI thread that contains turns', async (t) => {
+  const f = await fixture();
+  const agent = session(f, [], undefined, 'used-thread', {
+    sessionToolsFingerprint: browserToolsFingerprint([]),
+    historyForToolUpgrade: '[]',
+  });
+  t.after(() => {
+    agent.close();
+    return f.cleanup();
+  });
+  await assert.rejects(agent.prepare(), /原会话已保留/);
+  assert.equal(agent.sessionId, 'used-thread');
+  assert.equal(agent.replacedSessionId, undefined);
+  assert.deepEqual(
+    (await f.requests()).map((r) => r.method),
+    ['initialize', 'initialized', 'thread/read'],
+  );
+});
+
 test('canceling migration before its first turn retains the old session and fingerprint', async (t) => {
   const f = await fixture({ threadStartDelayMs: 500 });
   const oldFingerprint = browserToolsFingerprint([]);
@@ -1233,6 +1346,134 @@ test('discovery uses executable PATH entries and does not pass an API key to log
   assert.equal(codex.version, 'codex-cli test');
   assert.equal(JSON.parse(await readFile(f.log, 'utf8')).apiKeyPresent, false);
   assert.ok(agents.filter((agent) => agent.id !== 'codex').every((agent) => !agent.supported));
+});
+
+test('Codex update checks compare the installed CLI against the official stable release', async () => {
+  const codex: AgentInfo = {
+    id: 'codex',
+    name: 'Codex',
+    available: true,
+    supported: true,
+    path: '/fixture/codex',
+  };
+  const latest = async (url: string) => {
+    assert.equal(url, 'https://releases.openai.com/codex/channels/latest');
+    return Response.json({ tag_name: 'rust-v0.100.0' });
+  };
+  const check = (version: string) =>
+    createCodexUpdateChecker(latest, async () => 'codex-cli ' + version)(codex);
+  assert.deepEqual(await check('0.98.2'), {
+    status: 'available',
+    installedVersion: '0.98.2',
+    latestVersion: '0.100.0',
+    releaseUrl: 'https://github.com/openai/codex/releases/tag/rust-v0.100.0',
+  });
+  for (const [version, status] of [
+    ['0.100.0', 'current'],
+    ['1.0.0-alpha.2', 'current'],
+    ['0.100.0-beta.2', 'available'],
+    ['custom', 'unknown'],
+  ])
+    assert.equal((await check(version)).status, status);
+  for (const fetchRelease of [
+    async () => {
+      throw new Error('offline');
+    },
+    async () => new Response(null, { status: 503 }),
+    async () => Response.json({ tag_name: 'rust-v1.0.0-beta.1' }),
+    async () => new Response('not json'),
+  ])
+    assert.deepEqual(
+      await createCodexUpdateChecker(fetchRelease, async () => 'codex-cli 0.99.0')(codex),
+      { status: 'unknown' },
+    );
+});
+
+test('Codex update checks share probes, cache release metadata, and observe external upgrades and removal', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1000 });
+  const root = await mkdtemp(path.join(tmpdir(), 'athena-update-check-'));
+  const executable = path.join(root, 'codex');
+  const releaseTag = 'rust-v1.0.0';
+  const codex: AgentInfo = {
+    id: 'codex',
+    name: 'Codex',
+    supported: true,
+    available: true,
+    path: executable,
+    version: 'codex-cli 0.99.0',
+  };
+  let fetches = 0,
+    online = true;
+  const check = createCodexUpdateChecker(async () => {
+    fetches++;
+    return online ? Response.json({ tag_name: releaseTag }) : new Response(null, { status: 503 });
+  });
+  try {
+    await writeFile(
+      executable,
+      `#!${process.execPath}\nconst fs=require('fs');if(process.argv[2]!=='--version')process.exit(2);fs.appendFileSync(${JSON.stringify(path.join(root, 'probes'))},'v');console.log('codex-cli '+fs.readFileSync(${JSON.stringify(path.join(root, 'installed'))},'utf8'));`,
+      { mode: 0o700 },
+    );
+    await writeFile(path.join(root, 'installed'), '0.99.0');
+    const [first, second] = await Promise.all([check(codex), check(codex, true)]);
+    assert.equal(first.status, 'available');
+    assert.deepEqual(first, second);
+    assert.equal(await readFile(path.join(root, 'probes'), 'utf8'), 'v');
+    t.mock.timers.tick(1000);
+    await writeFile(path.join(root, 'installed'), '1.0.0');
+    assert.equal((await check(codex)).status, 'current');
+    assert.equal(fetches, 1);
+    t.mock.timers.tick(6 * 60 * 60_000);
+    await check(codex);
+    assert.equal(fetches, 2);
+    online = false;
+    t.mock.timers.tick(1000);
+    assert.equal((await check(codex, true)).status, 'unknown');
+    t.mock.timers.tick(1000);
+    await check(codex);
+    assert.equal(fetches, 3);
+    online = true;
+    t.mock.timers.tick(10 * 60_000);
+    assert.equal((await check(codex)).status, 'current');
+    assert.equal(fetches, 4);
+    await rm(executable);
+    t.mock.timers.tick(1000);
+    assert.equal((await check(codex)).status, 'unknown');
+    assert.equal(fetches, 4);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('A late release response cannot restore an alert for a replaced executable', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1000 });
+  let finish!: (response: Response) => void;
+  let began!: () => void;
+  const started = new Promise<void>((resolve) => {
+    began = resolve;
+  });
+  const check = createCodexUpdateChecker(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+        began();
+      }),
+    async (path) => (path.endsWith('old') ? 'codex-cli 0.9.0' : 'codex-cli 1.0.0'),
+  );
+  const codex: AgentInfo = {
+    id: 'codex',
+    name: 'Codex',
+    available: true,
+    supported: true,
+    path: '/old',
+  };
+  const oldResult = check(codex);
+  await started;
+  t.mock.timers.tick(1000);
+  const newResult = check({ ...codex, path: '/new' });
+  finish(Response.json({ tag_name: 'rust-v1.0.0' }));
+  assert.equal((await oldResult).status, 'unknown');
+  assert.equal((await newResult).status, 'current');
 });
 
 test('Codex version and login probes run independently without serial startup waits', async () => {

@@ -1,12 +1,7 @@
+import { NavigationArrow, TurnIcon } from './HoverIcons';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Input } from '@heroui/react';
-import {
-  ArrowLeft02Icon,
-  ArrowRight02Icon,
-  Cursor01Icon,
-  RefreshCwIcon,
-  UsersIcon,
-} from '@hugeicons-pro/core-stroke-rounded';
+import { Cursor01Icon, UsersIcon } from '@hugeicons-pro/core-stroke-rounded';
 import { ActionButton, Icon } from './ui';
 import { ElementInspector } from './ElementInspector';
 import { SharedSurface } from './SharedSurface';
@@ -270,25 +265,34 @@ export default function SharedPage() {
                 }}
               >
                 <ActionButton
+                  isIconOnly
                   aria-label="后退"
                   isDisabled={!controlling || !browser?.canGoBack}
                   onPress={() => void action('browser:back')}
                 >
-                  <Icon icon={ArrowLeft02Icon} size={16} />
+                  {({ isHovered, isDisabled }) => (
+                    <NavigationArrow hovered={isHovered && !isDisabled} />
+                  )}
                 </ActionButton>
                 <ActionButton
+                  isIconOnly
                   aria-label="前进"
                   isDisabled={!controlling || !browser?.canGoForward}
                   onPress={() => void action('browser:forward')}
                 >
-                  <Icon icon={ArrowRight02Icon} size={16} />
+                  {({ isHovered, isDisabled }) => (
+                    <NavigationArrow forward hovered={isHovered && !isDisabled} />
+                  )}
                 </ActionButton>
                 <ActionButton
+                  isIconOnly
                   aria-label="刷新"
                   isDisabled={!controlling}
                   onPress={() => void action('browser:reload')}
                 >
-                  <Icon icon={RefreshCwIcon} size={15} />
+                  {({ isHovered, isDisabled }) => (
+                    <TurnIcon kind="refresh" size={15} hovered={isHovered && !isDisabled} />
+                  )}
                 </ActionButton>
                 <Input
                   aria-label="共享网页地址"
@@ -313,55 +317,57 @@ export default function SharedPage() {
                   修改元素
                 </ActionButton>
               </form>
-              <div className="shared-workspace">
-                <SharedSurface
-                  connection={connection}
-                  frameSource={frameSource}
-                  enabled={controlling}
-                  onError={setError}
-                />
-                {inspector && controlling && (
-                  <aside className="shared-inspector">
-                    <ElementInspector
-                      actorId={me?.id}
-                      selected={browser?.selectedElement}
-                      tabId={browser?.activeTabId}
-                      previews={(browser?.previewEdits || []).filter(
-                        (p) => !p.actor || p.actor.id === me?.id,
-                      )}
-                      controlSurface={browser?.elementControls}
-                      onAction={action}
-                      onClose={() => setInspector(false)}
-                    />
-                  </aside>
-                )}
+              <div className="shared-page-content">
+                <div className="shared-workspace">
+                  <SharedSurface
+                    connection={connection}
+                    frameSource={frameSource}
+                    enabled={controlling}
+                    onError={setError}
+                  />
+                  {inspector && controlling && (
+                    <aside className="shared-inspector">
+                      <ElementInspector
+                        actorId={me?.id}
+                        selected={browser?.selectedElement}
+                        tabId={browser?.activeTabId}
+                        previews={(browser?.previewEdits || []).filter(
+                          (p) => !p.actor || p.actor.id === me?.id,
+                        )}
+                        controlSurface={browser?.elementControls}
+                        onAction={action}
+                        onClose={() => setInspector(false)}
+                      />
+                    </aside>
+                  )}
+                </div>
+                <section className="shared-recent-activity" aria-label="最近操作">
+                  <h2>最近操作</h2>
+                  {steps.length ? (
+                    <ol>
+                      {steps
+                        .slice(-3)
+                        .reverse()
+                        .map((step) => (
+                          <li key={step.id}>
+                            <span>
+                              {step.actor?.name || (step.source === 'agent' ? 'Agent' : '参与者')} ·{' '}
+                              {step.description}
+                            </span>
+                            <time>
+                              {new Date(step.timestamp).toLocaleTimeString('zh-CN', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </time>
+                          </li>
+                        ))}
+                    </ol>
+                  ) : (
+                    <p>还没有页面操作。</p>
+                  )}
+                </section>
               </div>
-              <section className="shared-recent-activity" aria-label="最近操作">
-                <h2>最近操作</h2>
-                {steps.length ? (
-                  <ol>
-                    {steps
-                      .slice(-3)
-                      .reverse()
-                      .map((step) => (
-                        <li key={step.id}>
-                          <span>
-                            {step.actor?.name || (step.source === 'agent' ? 'Agent' : '参与者')} ·{' '}
-                            {step.description}
-                          </span>
-                          <time>
-                            {new Date(step.timestamp).toLocaleTimeString('zh-CN', {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })}
-                          </time>
-                        </li>
-                      ))}
-                  </ol>
-                ) : (
-                  <p>还没有页面操作。</p>
-                )}
-              </section>
             </>
           )}
         </>

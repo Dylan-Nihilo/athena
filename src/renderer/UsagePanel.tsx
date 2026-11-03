@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { Button, Card, Disclosure, Tabs } from '@heroui/react';
 import {
   AlertCircleIcon,
@@ -78,6 +79,7 @@ export function UsagePanel() {
   const [model, setModel] = useState('all');
   const [agent, setAgent] = useState('all');
   const [dimension, setDimension] = useState<'model' | 'agent' | 'date'>('model');
+  const detailsHeading = useRef<HTMLHeadingElement>(null);
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
@@ -114,10 +116,10 @@ export function UsagePanel() {
   const incomplete = total.missing > 0 || total.partial > 0;
   const costIncomplete = total.cost.missing > 0 || total.cost.partial > 0;
   const showDates = () => {
-    setDimension('date');
-    document
-      .getElementById('usage-details')
-      ?.scrollIntoView({ behavior: 'instant', block: 'start' });
+    flushSync(() => setDimension('date'));
+    const scrollOptions = { behavior: 'instant', block: 'start', container: 'nearest' } as const;
+    detailsHeading.current?.scrollIntoView(scrollOptions);
+    detailsHeading.current?.focus({ preventScroll: true });
   };
   return (
     <section className="usage-panel" aria-label="独立用量面板">
@@ -300,7 +302,9 @@ export function UsagePanel() {
           </dl>
           <div id="usage-details" className="usage-details">
             <div className="usage-section-heading">
-              <h2>明细</h2>
+              <h2 ref={detailsHeading} tabIndex={-1}>
+                明细
+              </h2>
               <Tabs
                 variant="secondary"
                 selectedKey={dimension}
@@ -407,55 +411,59 @@ export function UsagePanel() {
               </Disclosure.Trigger>
             </Disclosure.Heading>
             <Disclosure.Content>
-              <p>
-                统一按标准档、短上下文（单次输入 ≤272K）、30m
-                缓存公开单价换算；未含长上下文、加速、区域及工具等附加费用。这里展示可比的 API
-                价值，不是实际账单。
-              </p>
-              <p>普通输入已扣除缓存读取和写入；输出已包含推理 Token。缺少必要字段的部分不计价。</p>
-              {total.cost.pricing.length > 0 && (
-                <div className="usage-table-scroll">
-                  <table className="usage-table usage-price-table">
-                    <caption>单价：USD / 百万 Token</caption>
-                    <thead>
-                      <tr>
-                        <th scope="col">模型 / 价格核验日</th>
-                        {costParts.map((part) => (
-                          <th key={part} scope="col">
-                            {costLabels[part]}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {total.cost.pricing.map((price) => (
-                        <tr key={`${price.version}/${price.model}`}>
-                          <th scope="row">
-                            {price.model}
-                            <small>{price.verifiedAt}</small>
-                          </th>
+              <Disclosure.Body>
+                <p>
+                  统一按标准档、短上下文（单次输入 ≤272K）、30m
+                  缓存公开单价换算；未含长上下文、加速、区域及工具等附加费用。这里展示可比的 API
+                  价值，不是实际账单。
+                </p>
+                <p>
+                  普通输入已扣除缓存读取和写入；输出已包含推理 Token。缺少必要字段的部分不计价。
+                </p>
+                {total.cost.pricing.length > 0 && (
+                  <div className="usage-table-scroll">
+                    <table className="usage-table usage-price-table">
+                      <caption>单价：USD / 百万 Token</caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">模型 / 价格核验日</th>
                           {costParts.map((part) => (
-                            <td key={part}>{dollars(price.rates[part])}</td>
+                            <th key={part} scope="col">
+                              {costLabels[part]}
+                            </th>
                           ))}
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-              <Button
-                className="usage-price-source"
-                size="sm"
-                variant="ghost"
-                onPress={() => {
-                  void window.workbench
-                    .invoke('shell:openExternal', { url: API_PRICING_SOURCE })
-                    .catch(() => setError('价格来源暂时无法打开，请稍后重试。'));
-                }}
-              >
-                <Icon icon={ExternalLinkIcon} size={13} />
-                OpenAI 官方价格
-              </Button>
+                      </thead>
+                      <tbody>
+                        {total.cost.pricing.map((price) => (
+                          <tr key={`${price.version}/${price.model}`}>
+                            <th scope="row">
+                              {price.model}
+                              <small>{price.verifiedAt}</small>
+                            </th>
+                            {costParts.map((part) => (
+                              <td key={part}>{dollars(price.rates[part])}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                <Button
+                  className="usage-price-source"
+                  size="sm"
+                  variant="ghost"
+                  onPress={() => {
+                    void window.workbench
+                      .invoke('shell:openExternal', { url: API_PRICING_SOURCE })
+                      .catch(() => setError('价格来源暂时无法打开，请稍后重试。'));
+                  }}
+                >
+                  <Icon icon={ExternalLinkIcon} size={13} />
+                  OpenAI 官方价格
+                </Button>
+              </Disclosure.Body>
             </Disclosure.Content>
           </Disclosure>
           <div className="usage-footnote">

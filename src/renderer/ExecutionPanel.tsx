@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Button, Disclosure } from '@heroui/react';
-import { ListView } from '@heroui-pro/react';
+import { Button, Card, Disclosure } from '@heroui/react';
+import { Timeline } from '@heroui-pro/react';
+import { ChatTool } from '@heroui-pro/react/chat-tool';
 import {
   ArrowDown01Icon,
   ArrowUpRight01Icon,
@@ -11,6 +12,7 @@ import {
   ListChecksIcon,
   Loading02Icon,
   SearchCheckIcon,
+  StopIcon,
   Tick02Icon,
   TriangleAlertIcon,
 } from '@hugeicons-pro/core-stroke-rounded';
@@ -77,6 +79,7 @@ export function ExecutionPanel({
   statusLabel,
   onAction,
   onShowBrowser,
+  onReviewRequest,
   onContinue,
 }: {
   message: ChatMessage;
@@ -85,6 +88,7 @@ export function ExecutionPanel({
   statusLabel: string;
   onAction: <T = unknown>(action: string, payload?: unknown) => Promise<T>;
   onShowBrowser: () => void;
+  onReviewRequest: (pending: PendingAgentRequest) => void;
   onContinue: () => void;
 }) {
   const [allTools, setAllTools] = useState(false);
@@ -93,18 +97,19 @@ export function ExecutionPanel({
   const tools = (message.tools ?? []).filter(
     (tool) => !['neo_plan', 'neo_checkpoint'].includes(tool.name),
   );
-  const expandedTool = tools.find((tool) => tool.id === expandedToolId);
+  const recentTools = tools.slice(-4);
   const latest = events.at(-1);
   const reconciliation = events.findLast((event) =>
     ['recovery', 'checkpoint', 'human-help'].includes(event.kind),
   );
-  const blocked = reconciliation?.status === 'blocked' || reconciliation?.outcome === 'unknown';
+  const cancelled = events.some((event) => event.kind === 'cancelled');
+  const blocked =
+    !cancelled && (reconciliation?.status === 'blocked' || reconciliation?.outcome === 'unknown');
   const running = message.status === 'streaming';
   const currentTool = tools.findLast((tool) => tool.status === 'running');
   const currentStep = message.plan?.find((step) => step.status === 'inProgress');
   const checkpoints = events.filter((event) => event.kind === 'checkpoint');
   const artifacts = events.filter((event) => event.kind === 'artifact' && event.artifact);
-  const cancelled = events.some((event) => event.kind === 'cancelled');
   const unfinishedPlan = !running && message.plan?.some((step) => step.status !== 'completed');
   const state =
     running && statusLabel.includes('停止')
@@ -127,21 +132,24 @@ export function ExecutionPanel({
   if (!running && !tools.length && !message.plan?.length && !events.length && !message.model)
     return null;
   return (
-    <section
-      className={`execution-panel ${blocked || pending ? 'needs-attention' : ''}`}
+    <Card
+      role="region"
+      className="execution-panel"
       aria-label="任务执行"
       data-state={
         pending || blocked
           ? 'attention'
-          : message.status === 'error'
+          : message.status === 'error' && !cancelled
             ? 'error'
             : running
               ? 'running'
               : 'idle'
       }
     >
-      <div className="execution-heading" role="status">
-        {pending ? (
+      <Card.Header className="execution-heading" role="status">
+        {cancelled && !running ? (
+          <Icon icon={StopIcon} size={15} />
+        ) : pending ? (
           <Icon icon={HandIcon} size={15} />
         ) : blocked || message.status === 'error' || unfinishedPlan ? (
           <Icon icon={TriangleAlertIcon} size={15} />
@@ -150,7 +158,7 @@ export function ExecutionPanel({
         ) : (
           <Icon icon={Tick02Icon} size={15} />
         )}
-        <strong>{state}</strong>
+        <Card.Title>{state}</Card.Title>
         {message.model && (
           <span
             className="execution-model"
@@ -166,7 +174,7 @@ export function ExecutionPanel({
             {message.model.source === 'unconfirmed' ? ' · 待确认' : ''}
           </span>
         )}
-      </div>
+      </Card.Header>
       {currentStep && (
         <p className="execution-objective">
           <span>{running ? '当前目标' : '最后执行步骤'}</span>
@@ -187,29 +195,45 @@ export function ExecutionPanel({
             </Disclosure.Trigger>
           </Disclosure.Heading>
           <Disclosure.Content>
-            <ol>
+            <Timeline density="compact" size="sm">
               {message.plan.map((step, index) => (
-                <li key={`${index}-${step.step}`} data-state={step.status}>
-                  {step.status === 'completed' ? (
-                    <Icon icon={Tick02Icon} size={13} />
-                  ) : step.status === 'inProgress' && running ? (
-                    <Icon icon={Loading02Icon} size={13} className="spin" />
-                  ) : (
-                    <Icon icon={CircleIcon} size={11} />
-                  )}
-                  <span>{step.step}</span>
-                  <small>
-                    {step.status === 'completed'
-                      ? '已完成'
-                      : step.status === 'inProgress'
-                        ? running
-                          ? '执行中'
-                          : '已中断'
-                        : '待执行'}
-                  </small>
-                </li>
+                <Timeline.Item
+                  key={`${index}-${step.step}`}
+                  status={
+                    step.status === 'completed'
+                      ? 'success'
+                      : step.status === 'inProgress' && running
+                        ? 'current'
+                        : 'muted'
+                  }
+                >
+                  <Timeline.Rail>
+                    <Timeline.Marker>
+                      {step.status === 'completed' ? (
+                        <Icon icon={Tick02Icon} size={13} />
+                      ) : step.status === 'inProgress' && running ? (
+                        <Icon icon={Loading02Icon} size={13} className="spin" />
+                      ) : (
+                        <Icon icon={CircleIcon} size={11} />
+                      )}
+                    </Timeline.Marker>
+                    <Timeline.Connector />
+                  </Timeline.Rail>
+                  <Timeline.Content>
+                    <span>{step.step}</span>
+                    <small>
+                      {step.status === 'completed'
+                        ? '已完成'
+                        : step.status === 'inProgress'
+                          ? running
+                            ? '执行中'
+                            : '已中断'
+                          : '待执行'}
+                    </small>
+                  </Timeline.Content>
+                </Timeline.Item>
               ))}
-            </ol>
+            </Timeline>
           </Disclosure.Content>
         </Disclosure>
       )}
@@ -228,15 +252,7 @@ export function ExecutionPanel({
               <Icon icon={ArrowUpRight01Icon} size={13} />
             </Button>
             {pending && (
-              <Button
-                size="sm"
-                variant="primary"
-                onPress={() => {
-                  const request = document.querySelector<HTMLElement>('.request-panel');
-                  request?.scrollIntoView({ block: 'nearest' });
-                  request?.querySelector<HTMLElement>('input,textarea,.button-row button')?.focus();
-                }}
-              >
+              <Button size="sm" variant="primary" onPress={() => onReviewRequest(pending)}>
                 处理请求
               </Button>
             )}
@@ -262,74 +278,118 @@ export function ExecutionPanel({
               <Icon icon={ArrowDown01Icon} size={13} />
             </Button>
           )}
-          <ListView
+          <div
+            role="group"
             aria-label="工具动作"
-            selectionMode="none"
             className="execution-tool-list"
-            onAction={(key) =>
-              setExpandedToolId(expandedToolId === String(key) ? undefined : String(key))
-            }
+            onKeyDown={(event) => {
+              const rows = Array.from(
+                event.currentTarget.querySelectorAll<HTMLButtonElement>(
+                  '[data-slot="chat-tool-trigger"]',
+                ),
+              );
+              const index = rows.indexOf(event.target as HTMLButtonElement);
+              if (index < 0) return;
+              const next = {
+                ArrowUp: index - 1,
+                ArrowDown: index + 1,
+                Home: 0,
+                End: rows.length - 1,
+              }[event.key];
+              if (next === undefined) return;
+              event.preventDefault();
+              rows[Math.max(0, Math.min(rows.length - 1, next))].focus();
+            }}
           >
-            {(allTools ? tools : tools.slice(-4)).map((tool) => (
-              <ListView.Item
-                id={tool.id}
-                key={tool.id}
-                textValue={toolTitle(tool.name)}
-                className="execution-tool"
-                data-tool-status={tool.status}
-                aria-expanded={expandedToolId === tool.id}
-              >
-                <ListView.ItemContent>
-                  {tool.status === 'running' ? (
-                    <Icon icon={Loading02Icon} size={13} className="spin" />
-                  ) : tool.status === 'error' ? (
-                    <Icon icon={TriangleAlertIcon} size={13} />
-                  ) : (
-                    <Icon icon={Tick02Icon} size={13} />
-                  )}
-                  <ListView.Title>{toolTitle(tool.name)}</ListView.Title>
-                  <ListView.Description>{toolTarget(tool)}</ListView.Description>
-                </ListView.ItemContent>
-                <ListView.ItemAction>
-                  <small>
-                    {tool.status === 'running'
-                      ? '执行中'
-                      : tool.status === 'error'
-                        ? '未成功'
-                        : '已返回'}
-                    {tool.durationMs !== undefined
-                      ? ` · ${(tool.durationMs / 1000).toFixed(1)}s`
-                      : ''}
-                  </small>
-                  <Icon icon={ArrowDown01Icon} size={12} />
-                </ListView.ItemAction>
-              </ListView.Item>
-            ))}
-          </ListView>
-          {expandedTool && (
-            <div className="execution-tool-detail">
-              <div className="tool-detail-heading">
-                <strong>{toolTitle(expandedTool.name)}</strong>
-                <Button size="sm" variant="ghost" onPress={() => setExpandedToolId(undefined)}>
-                  收起详情
-                </Button>
-              </div>
-              {expandedTool.output && (
-                <div className="tool-result">
-                  <strong>{expandedTool.status === 'error' ? '返回的问题' : '返回结果'}</strong>
-                  <pre>{expandedTool.output}</pre>
-                </div>
-              )}
-              <details className="tool-parameters">
-                <summary>动作参数</summary>
-                <pre>
-                  {typeof expandedTool.input === 'string'
-                    ? expandedTool.input
-                    : JSON.stringify(expandedTool.input, null, 2)}
-                </pre>
-              </details>
-            </div>
-          )}
+            {tools
+              .filter(
+                (tool) => allTools || recentTools.includes(tool) || expandedToolId === tool.id,
+              )
+              .map((tool) => {
+                const expanded = expandedToolId === tool.id;
+                const target = toolTarget(tool);
+                return (
+                  <ChatTool
+                    key={tool.id}
+                    isExpanded={expanded}
+                    onExpandedChange={(open) => setExpandedToolId(open ? tool.id : undefined)}
+                    state={
+                      tool.status === 'running'
+                        ? 'input-available'
+                        : tool.status === 'error'
+                          ? 'output-error'
+                          : 'output-available'
+                    }
+                  >
+                    <ChatTool.Trigger>
+                      <ChatTool.StatusIcon />
+                      <span>{toolTitle(tool.name)}</span>
+                      {target && (
+                        <span className="execution-tool-target" title={target}>
+                          {target}
+                        </span>
+                      )}
+                      <small>
+                        {tool.status === 'running'
+                          ? '执行中'
+                          : tool.status === 'error'
+                            ? '未成功'
+                            : '已返回'}
+                        {tool.durationMs !== undefined
+                          ? ` · ${(tool.durationMs / 1000).toFixed(1)}s`
+                          : ''}
+                      </small>
+                    </ChatTool.Trigger>
+                    <ChatTool.Content>
+                      {expanded && (
+                        <>
+                          {tool.output &&
+                            (tool.status === 'error' ? (
+                              <ChatTool.Error label="返回的问题">
+                                <pre>{tool.output}</pre>
+                              </ChatTool.Error>
+                            ) : (
+                              <ChatTool.Result label="返回结果">
+                                <pre>{tool.output}</pre>
+                              </ChatTool.Result>
+                            ))}
+                          <Disclosure>
+                            {({ isExpanded }) => (
+                              <>
+                                <Disclosure.Heading>
+                                  <Disclosure.Trigger className="execution-args-trigger">
+                                    动作参数
+                                    <Disclosure.Indicator />
+                                  </Disclosure.Trigger>
+                                </Disclosure.Heading>
+                                <Disclosure.Content>
+                                  {isExpanded && <ChatTool.Args input={tool.input} />}
+                                </Disclosure.Content>
+                              </>
+                            )}
+                          </Disclosure>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onPress={(event) => {
+                              event.target
+                                .closest('[data-slot="chat-tool"]')
+                                ?.querySelector<HTMLButtonElement>(
+                                  '[data-slot="chat-tool-trigger"]',
+                                )
+                                ?.focus();
+                              setExpandedToolId(undefined);
+                            }}
+                          >
+                            收起详情
+                          </Button>
+                        </>
+                      )}
+                    </ChatTool.Content>
+                  </ChatTool>
+                );
+              })}
+          </div>
         </div>
       )}
       {!!checkpoints.length && (
@@ -394,6 +454,6 @@ export function ExecutionPanel({
       {message.failure && message.text !== message.failure && (
         <p className="execution-failure">{message.failure}</p>
       )}
-    </section>
+    </Card>
   );
 }

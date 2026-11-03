@@ -3,7 +3,7 @@
   width: 100%;
 }
 .choice-select .choice-select-trigger {
-  min-height: 34px;
+  min-height: var(--control-row-height);
   width: 100%;
   align-items: center;
   padding-block: 0;
@@ -57,7 +57,6 @@
 .model-picker {
   gap: 6px;
   max-width: 230px;
-  padding-inline: 7px;
 }
 .app-shell:not(.browser-collapsed) .model-picker {
   max-width: 210px;
@@ -81,24 +80,42 @@
 .model-picker > svg {
   flex: none;
 }
+.picker-chevron {
+  transition-property: none;
+}
+.button[aria-expanded='true'] > .picker-chevron {
+  rotate: 180deg;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .picker-chevron {
+    transition:
+      rotate 180ms ease-out,
+      translate 140ms ease-out;
+  }
+  @media (hover: hover) {
+    .button[data-hovered]:not([aria-expanded='true']) > .picker-chevron {
+      translate: 0 2px;
+    }
+  }
+}
 .model-controls {
-  width: min(432px, calc(100vw - 24px));
+  width: min(320px, calc(100vw - 24px));
   border: 0;
   border-radius: 22px;
   padding: 0;
   background: var(--overlay);
   box-shadow: var(--overlay-shadow);
-  overflow: hidden;
+  overflow-y: auto;
 }
 .model-controls [data-slot='popover-dialog'] {
-  padding: 16px;
+  padding: 10px;
 }
 .model-controls-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 12px;
+  margin: 0 0 4px 10px;
 }
 .model-controls-heading [data-slot='popover-heading'] {
   color: var(--ink);
@@ -109,8 +126,7 @@
   display: flex;
   gap: 2px;
 }
-.model-controls-heading button,
-.reasoning-heading button {
+.model-controls-heading button {
   width: 32px;
   height: 32px;
   min-height: 32px;
@@ -118,90 +134,31 @@
   border-radius: 16px;
   color: var(--muted);
 }
-.model-choice .choice-select-trigger {
-  min-height: 38px;
+.model-options {
+  max-height: min(228px, 32vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 3px;
+}
+.model-options [role='option'] {
+  min-height: 34px;
+  padding: 7px 30px 7px 10px;
+  border-radius: 10px;
+  color: var(--ink);
   font-size: 13px;
-  font-weight: 500;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.model-options [aria-selected='true'] {
   background: var(--surface-secondary);
-  box-shadow: none;
+  font-weight: 550;
 }
-.reasoning-control {
-  margin-top: 20px;
-}
-.reasoning-slider {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.reasoning-heading {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.reasoning-heading [data-slot='label'] {
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--secondary);
-}
-.reasoning-heading [data-slot='slider-output'] {
-  margin-left: auto;
-  max-width: 55%;
-  overflow-wrap: anywhere;
-  text-align: right;
-  color: var(--accent-soft-foreground);
-  font-size: 13px;
-  font-weight: 600;
-}
-.reasoning-slider .slider__track {
-  height: 6px;
-  margin: 10px 10px 8px;
-  width: calc(100% - 20px);
-  border-radius: 999px;
-  background: var(--surface-tertiary);
-}
-.reasoning-slider .slider__fill {
-  height: 100%;
-  border-radius: 999px;
-  background: var(--accent);
-}
-.reasoning-slider .slider__thumb {
-  width: 20px;
-  height: 20px;
-  border: 2px solid var(--accent);
-  border-radius: 999px;
-  background: var(--surface);
-  box-shadow: var(--surface-shadow);
-}
-.reasoning-slider .slider__thumb::after {
-  width: 0;
-  height: 0;
-  background: transparent;
-  box-shadow: none;
-}
-.reasoning-slider .slider__step {
-  width: 2px;
-  height: 5px;
-  border-radius: 1px;
-  background: color-mix(in oklch, var(--muted) 45%, transparent);
-}
-.reasoning-slider .slider__step[data-filled='true'] {
-  background: color-mix(in oklch, var(--accent-foreground) 55%, transparent);
-}
-.reasoning-range {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  color: var(--muted);
-  font-size: 11px;
-  min-height: 14px;
-}
-.reasoning-range span {
-  max-width: 48%;
-  overflow-wrap: anywhere;
+.model-options [data-slot='list-box-item-indicator'] {
+  color: var(--ink);
 }
 .model-control-status,
 .model-control-error {
-  margin: 14px 0 0;
+  margin: 8px 10px 4px;
   font-size: 11px;
   line-height: 1.5;
   color: var(--muted);
