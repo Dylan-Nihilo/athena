@@ -82,7 +82,7 @@ shasum -a 256 -c SHA256SUMS.txt
 - App 公证 ID：`795e4eea-53f4-40f0-9bc2-2efd91c66b80`，Apple 返回 `Accepted`。
 - 最终签名 DMG 公证 ID：`07922798-5609-4106-bc37-b896ed214b55`，Apple 返回 `Accepted`。
 - App 与 DMG 票据装订及校验成功；ZIP 解压和 DMG 只读挂载后，内部 App 的深度签名、票据、Gatekeeper 均通过。
-- 下载目标保持 `Dylan-Nihilo/athena`；当前 Git remote 指向其他仓库，不等于下载目标变更。本次未上传 GitHub Release。
+- 下载链接保持 `Dylan-Nihilo/athena`（GitHub 当前重定向到 `bitcat-ai/athena`）。经用户确认，已替换 `v0.7.0` 的 DMG、ZIP 和 `SHA256SUMS.txt`，版本标签不移动；源码推送到 `feat/apple-signing` 分支。
 - 曾有一次 electron-builder 公证失败，提示找不到 `athena-notary`。随后同名凭据在前台、Node 子进程和后台的 `history` 查询，以及真实 `submit` 均成功，未能稳定复现最初失败，根因尚未确认。显式指定登录钥匙串的探针则失败；不能默认凭据就在登录钥匙串，不应因此重新创建或删除现有凭据。
 - 恢复时复用已签名 App，手工提交并装订，然后用 `electron-builder --config scripts/electron-builder.release.cjs --prepackaged release/v0.7.0/notarized/mac-arm64/Athena.app --mac dmg zip --arm64 --publish never` 生成归档，避免重新签名。该命令需要设置 `APPLE_KEYCHAIN_PROFILE=athena-notary`；它跳过 App 签名和公证步骤，只能用于已独立验证的 App。
 
