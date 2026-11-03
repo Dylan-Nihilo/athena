@@ -77,6 +77,42 @@ shasum -a 256 -c SHA256SUMS.txt
 
 `package:signed` 不包含公证票据，Gatekeeper 可能拒绝其运行。DMG/ZIP 生成、签名、公证、GitHub Release 上传与可下载性是不同阶段；本命令不会自动上传或配置自动更新。已发布的旧 ad-hoc 安装包不会因此变成正式签名包。
 
+## 上传签名包到 GitHub Release
+
+版本选择与递增使用 `bumpp`，上传入口为 `scripts/upload-release.mjs`，使用 macOS 自带的 `curl`、`git` 和签名工具，不依赖 `gh`，也不再直接依赖 `semver`。先完成最终 DMG 公证、装订和 SHA-256 文件生成。GitHub 身份使用私下配置的 `GH_TOKEN` / `GITHUB_TOKEN`，或已有的 GitHub git credential helper；需要目标仓库 Contents 写权限。不要把 Token 放进参数、源码、日志或聊天。
+
+必须显式指定仓库。版本从 `package.json` 读取，默认目录为 `release/v<版本>/notarized/`；可用 `--directory` 指定目录。`--tag` 如有指定必须匹配项目版本。脚本只上传到**已存在、公开发布且非预发布**的 Release，不创建 Release、不移动标签、不推送源码、不修改 Release 文案。
+
+先运行 `npm run version:bump`，由 bumpp 交互式选择 patch / minor / major 或指定版本并确认。该命令同步更新 `package.json` 和 `package-lock.json`，默认关闭自动 commit、tag、push 和版本生命周期脚本。版本变更需要自行检查、提交，然后重建安装包并完成公证。
+
+上传不再枚举或比较远端其他版本，也不阻止上传低于远端最高版本的安装包；只检查指定标签与本地版本、实际安装包一致，并要求该标签对应的公开正式 Release 已存在。已有同名资产仍需 `--replace` 才能覆盖。
+
+默认在交互终端中要求重新输入完整目标标签（例如 `v0.7.0`）。空输入、错误版本、Ctrl+C 或输入结束均取消，不会写入远端。确认的是已经构建并通过签名校验的版本，不是重命名或改版本工具；如果要发新版本，先更新 `package.json`、重建并完成公证，不能把旧包改名冒充新版本。非交互 CI 必须同时提供 `--yes --tag v<版本>`，签名、公证、版本一致性和哈希检查不会跳过。`--dry-run` 不提示确认，也不写入远端。
+
+```bash
+# 交互式升版；不自动提交、打标签或推送。
+npm run version:bump
+
+# 只做本地签名/票据/哈希校验和远端只读检查，不上传。
+npm run release:upload -- --repo Dylan-Nihilo/athena --replace --dry-run
+
+# 没有同名资产时上传；已有资产会拒绝操作。
+npm run release:upload -- --repo OWNER/REPOSITORY
+
+# 确认替换已发布的同名安装包与校验文件。
+npm run release:upload -- --repo OWNER/REPOSITORY --replace
+# 随后输入提示中的完整标签，例如 v0.7.0；回车取消。
+
+# CI：同时指定 --yes 与匹配当前构建的 --tag；不会跳过版本一致性检查。
+npm run release:upload -- --repo OWNER/REPOSITORY --replace --yes --tag v0.7.0
+```
+
+若 GitHub API 返回的实际仓库与 `--repo` 不同，默认直接拒绝上传，并显示实际仓库名。确认目标后才可加 `--allow-redirect`，不要为了绕过错误盲目加此参数；公开下载验证仍使用用户指定的 URL。脚本不修改 README 下载链接或 Git remote。
+
+上传仅包含最终 DMG、ZIP 和 `SHA256SUMS.txt`。先校验 DMG 签名、票据及 Gatekeeper，再解压 ZIP 校验内部 App 的深度签名、票据、Gatekeeper、版本与应用标识。三个文件先用唯一临时名称上传，检查 GitHub 返回的大小及 SHA-256；全部通过后才将旧文件改名备份并切换新文件到正式下载名。随后通过**无登录凭据的公开链接**下载全部文件，重新比较 SHA-256，全部匹配后才删除旧备份。
+
+失败不会自动重试写请求。恢复记录位于 `.runtime/release-upload-<唯一标识>.json`，包含仓库、标签和资产 ID，不含凭据。旧资产在公开下载验证成功前不会被删除，但切换中失败可能留下临时/备份名称；查看记录与 GitHub 当前资产，必要时先将旧备份恢复原名，不要不检查就重复运行。脚本也用 `.runtime/release-upload-<仓库标签哈希>.lock` 防止同一本地工作区并发；进程被强制终止留下锁时，先确认对应 PID 不再运行再人工删除锁。其他机器的并发发布不受此本地锁保护。
+
 ## 本次验证（0.7.0，Apple Silicon）
 
 - App 公证 ID：`795e4eea-53f4-40f0-9bc2-2efd91c66b80`，Apple 返回 `Accepted`。
