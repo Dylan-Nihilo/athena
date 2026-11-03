@@ -1,6 +1,6 @@
 # Third-party notices
 
-核查日期：2026-10-31。版本来自本次安装的包及锁文件；正式构建以 `package-lock.json` 和实际随包内容为准。
+核查日期：2026-10-31（HugeIcons 依赖于 2026-11-03 核查）。版本来自本次安装的包及锁文件；正式构建以 `package-lock.json` 和实际随包内容为准。
 
 Athena（仓库名 `athena`）的仓库公开可见，项目代码保持 `UNLICENSED`，尚未授予开源许可证。以下许可属于相应第三方组件，不构成对 Athena 本身的 MIT 或其他许可授权。
 
@@ -25,11 +25,10 @@ BrowserOS neo 和 Electron 均包含 Chromium 及其他第三方组件，各组�
 | `zod`                           | 3.25.76  | [MIT](https://github.com/colinhacks/zod/blob/main/LICENSE)                                                              |
 | React、React DOM                | 19.3.1   | [MIT](https://github.com/react/react/blob/main/LICENSE)                                                                 |
 | `react-markdown`                | 10.1.0   | [MIT](https://github.com/remarkjs/react-markdown/blob/main/license)                                                     |
-| `lucide-react`                  | 1.64.0   | [ISC；部分来自 Feather 的图标另适用 MIT](https://github.com/lucide-icons/lucide/blob/main/LICENSE)                      |
+| `@hugeicons/react`              | 1.1.10   | React 渲染器，[MIT](https://github.com/hugeicons/hugeicons/blob/main/packages/react/LICENSE.md) |
+| `@hugeicons-pro/core-stroke-rounded` | 4.4.0 | 通用操作图标，[HugeIcons Pro 商业许可](https://hugeicons.com/license-agreement) |
 | `qrcode`                        | 1.5.4    | [MIT](https://github.com/soldair/node-qrcode/blob/master/license)                                                       |
 | `ws`                            | 8.22.0   | [MIT](https://github.com/websockets/ws/blob/master/LICENSE)                                                             |
-
-Lucide 的许可证包含 Lucide Icons and Contributors 的 ISC 声明，以及所列 Feather 衍生图标的 Cole Bemis MIT 声明；分发图标时应一并保留，不能只保留表中的简写。
 
 ## HeroUI 界面组件
 

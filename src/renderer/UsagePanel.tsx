@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, Card, Disclosure, Tabs } from '@heroui/react';
 import {
-  RefreshCw,
-  CircleHelp,
-  ChartNoAxesCombined,
-  AlertCircle,
-  ChevronDown,
-  ExternalLink,
-} from 'lucide-react';
+  AlertCircleIcon,
+  ArrowDown01Icon,
+  ChartNoAxesCombinedIcon,
+  ExternalLinkIcon,
+  HelpCircleIcon,
+  RefreshCwIcon,
+} from '@hugeicons-pro/core-stroke-rounded';
+import { Icon } from './ui';
 import { ChoiceSelect } from './ChoiceSelect';
 import { API_PRICING_SOURCE, costParts, type CostPart } from '../shared/usage-pricing';
 import './usage-currency.css';
@@ -132,7 +133,7 @@ export function UsagePanel() {
           isDisabled={loading}
           onPress={() => void refresh()}
         >
-          <RefreshCw size={15} className={loading ? 'spin' : ''} />
+          <Icon icon={RefreshCwIcon} size={15} className={loading ? 'spin' : ''} />
           刷新
         </Button>
       </div>
@@ -177,7 +178,7 @@ export function UsagePanel() {
       </div>
       {error && (
         <div className="usage-notice error" role="alert">
-          <AlertCircle size={16} />
+          <Icon icon={AlertCircleIcon} size={16} />
           {error}
           <Button size="sm" variant="ghost" onPress={() => void refresh()}>
             重试
@@ -192,7 +193,7 @@ export function UsagePanel() {
         <>
           {(incomplete || costIncomplete) && (
             <div className="usage-notice" role="status">
-              <CircleHelp size={16} />
+              <Icon icon={HelpCircleIcon} size={16} />
               <span>
                 {total.cost.missing > 0 ? `${total.cost.missing} 项任务暂无可用估算。` : ''}
                 {total.cost.partial > 0 ? `${total.cost.partial} 项仅计已知部分。` : ''}
@@ -271,7 +272,7 @@ export function UsagePanel() {
                 </div>
               ) : (
                 <div className="usage-chart-empty">
-                  <ChartNoAxesCombined size={28} />
+                  <Icon icon={ChartNoAxesCombinedIcon} size={28} />
                   <span>此范围暂无可核实的费用估算</span>
                 </div>
               )}
@@ -381,7 +382,7 @@ export function UsagePanel() {
               </div>
             ) : (
               <div className="usage-empty">
-                <ChartNoAxesCombined size={30} />
+                <Icon icon={ChartNoAxesCombinedIcon} size={30} />
                 <strong>暂无用量记录</strong>
                 <p>运行任务后，可在这里查看用量和 API 等价估算。</p>
                 {(model !== 'all' || agent !== 'all') && (
@@ -402,7 +403,7 @@ export function UsagePanel() {
           <Disclosure className="usage-pricing-details">
             <Disclosure.Heading>
               <Disclosure.Trigger>
-                估算依据与单价 <ChevronDown size={14} />
+                估算依据与单价 <Icon icon={ArrowDown01Icon} size={14} />
               </Disclosure.Trigger>
             </Disclosure.Heading>
             <Disclosure.Content>
@@ -452,7 +453,7 @@ export function UsagePanel() {
                     .catch(() => setError('价格来源暂时无法打开，请稍后重试。'));
                 }}
               >
-                <ExternalLink size={13} />
+                <Icon icon={ExternalLinkIcon} size={13} />
                 OpenAI 官方价格
               </Button>
             </Disclosure.Content>

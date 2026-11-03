@@ -2,18 +2,19 @@ import { useState } from 'react';
 import { Button, Disclosure } from '@heroui/react';
 import { ListView } from '@heroui-pro/react';
 import {
-  ArrowUpRight,
-  Check,
-  ChevronDown,
-  Circle,
-  FileCheck2,
-  FolderOpen,
-  Hand,
-  ListChecks,
-  Loader2,
-  SearchCheck,
-  TriangleAlert,
-} from 'lucide-react';
+  ArrowDown01Icon,
+  ArrowUpRight01Icon,
+  CircleIcon,
+  FileCheckIcon,
+  FolderOpenIcon,
+  HandIcon,
+  ListChecksIcon,
+  Loading02Icon,
+  SearchCheckIcon,
+  Tick02Icon,
+  TriangleAlertIcon,
+} from '@hugeicons-pro/core-stroke-rounded';
+import { Icon } from './ui';
 import type { ChatMessage, PendingAgentRequest, ToolCall } from '../shared/types';
 
 const names: Record<string, string> = {
@@ -141,13 +142,13 @@ export function ExecutionPanel({
     >
       <div className="execution-heading" role="status">
         {pending ? (
-          <Hand size={15} />
+          <Icon icon={HandIcon} size={15} />
         ) : blocked || message.status === 'error' || unfinishedPlan ? (
-          <TriangleAlert size={15} />
+          <Icon icon={TriangleAlertIcon} size={15} />
         ) : running ? (
-          <Loader2 size={15} className="spin" />
+          <Icon icon={Loading02Icon} size={15} className="spin" />
         ) : (
-          <Check size={15} />
+          <Icon icon={Tick02Icon} size={15} />
         )}
         <strong>{state}</strong>
         {message.model && (
@@ -176,13 +177,13 @@ export function ExecutionPanel({
         <Disclosure defaultExpanded className="execution-plan">
           <Disclosure.Heading>
             <Disclosure.Trigger>
-              <ListChecks size={14} />
+              <Icon icon={ListChecksIcon} size={14} />
               <span>任务计划</span>
               <small>
                 {message.plan.filter((step) => step.status === 'completed').length} /{' '}
                 {message.plan.length} 步
               </small>
-              <ChevronDown size={13} />
+              <Icon icon={ArrowDown01Icon} size={13} />
             </Disclosure.Trigger>
           </Disclosure.Heading>
           <Disclosure.Content>
@@ -190,11 +191,11 @@ export function ExecutionPanel({
               {message.plan.map((step, index) => (
                 <li key={`${index}-${step.step}`} data-state={step.status}>
                   {step.status === 'completed' ? (
-                    <Check size={13} />
+                    <Icon icon={Tick02Icon} size={13} />
                   ) : step.status === 'inProgress' && running ? (
-                    <Loader2 size={13} className="spin" />
+                    <Icon icon={Loading02Icon} size={13} className="spin" />
                   ) : (
-                    <Circle size={11} />
+                    <Icon icon={CircleIcon} size={11} />
                   )}
                   <span>{step.step}</span>
                   <small>
@@ -224,7 +225,7 @@ export function ExecutionPanel({
           <div className="execution-actions">
             <Button size="sm" variant="secondary" onPress={onShowBrowser}>
               查看网页
-              <ArrowUpRight size={13} />
+              <Icon icon={ArrowUpRight01Icon} size={13} />
             </Button>
             {pending && (
               <Button
@@ -258,7 +259,7 @@ export function ExecutionPanel({
               onPress={() => setAllTools(!allTools)}
             >
               {allTools ? '收起较早动作' : `查看较早的 ${tools.length - 4} 个动作`}
-              <ChevronDown size={13} />
+              <Icon icon={ArrowDown01Icon} size={13} />
             </Button>
           )}
           <ListView
@@ -280,11 +281,11 @@ export function ExecutionPanel({
               >
                 <ListView.ItemContent>
                   {tool.status === 'running' ? (
-                    <Loader2 size={13} className="spin" />
+                    <Icon icon={Loading02Icon} size={13} className="spin" />
                   ) : tool.status === 'error' ? (
-                    <TriangleAlert size={13} />
+                    <Icon icon={TriangleAlertIcon} size={13} />
                   ) : (
-                    <Check size={13} />
+                    <Icon icon={Tick02Icon} size={13} />
                   )}
                   <ListView.Title>{toolTitle(tool.name)}</ListView.Title>
                   <ListView.Description>{toolTarget(tool)}</ListView.Description>
@@ -300,7 +301,7 @@ export function ExecutionPanel({
                       ? ` · ${(tool.durationMs / 1000).toFixed(1)}s`
                       : ''}
                   </small>
-                  <ChevronDown size={12} />
+                  <Icon icon={ArrowDown01Icon} size={12} />
                 </ListView.ItemAction>
               </ListView.Item>
             ))}
@@ -335,10 +336,10 @@ export function ExecutionPanel({
         <Disclosure defaultExpanded className="execution-checkpoints">
           <Disclosure.Heading>
             <Disclosure.Trigger>
-              <SearchCheck size={15} />
+              <Icon icon={SearchCheckIcon} size={15} />
               <span>核对结果</span>
               <small>{checkpoints.length} 项</small>
-              <ChevronDown size={13} />
+              <Icon icon={ArrowDown01Icon} size={13} />
             </Disclosure.Trigger>
           </Disclosure.Heading>
           <Disclosure.Content>
@@ -364,7 +365,7 @@ export function ExecutionPanel({
         <div className="execution-artifacts">
           {artifacts.map((event) => (
             <div key={event.id} className="execution-artifact">
-              <FileCheck2 size={20} />
+              <Icon icon={FileCheckIcon} size={20} />
               <div>
                 <strong>{event.artifact!.path.split('/').pop()}</strong>
                 <span>{event.artifact!.bytes.toLocaleString()} bytes · 已核对文件</span>
@@ -381,7 +382,7 @@ export function ExecutionPanel({
                   })
                 }
               >
-                <FolderOpen size={16} />
+                <Icon icon={FolderOpenIcon} size={16} />
               </Button>
             </div>
           ))}

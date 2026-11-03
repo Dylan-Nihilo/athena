@@ -19,7 +19,7 @@ Computer Use 相关工作先读 [交接说明](docs/computer-use-handoff.md)，�
 
 - Electron `^45.1.0`、React/React DOM `^19.3.1`、TypeScript `^7.0.2`、Vite `^8.3.5`。
 - HeroUI React/Styles `3.2.7`、HeroUI Pro `1.0.0-beta.10`、Tailwind CSS `4.3.3`。
-- React Aria Components `1.22.1`、Motion `14.9.0`、Lucide React `^1.64.0`。
+- React Aria Components `1.22.1`、Motion `14.9.0`。通用图标使用 `@hugeicons-pro/core-stroke-rounded` 与 `@hugeicons/react`。
 - 元素调整复用 [packages/element-inspector](packages/element-inspector/README.md) 与现有受约束的 A2UI 控件，不并行创建第二套检查器。
 
 HeroUI 使用 v3 compound API 与 `onPress`。通用选择复用 `ChoiceSelect`，工具栏按钮复用 `ActionButton`。Pro 构件通过既有 `heroui:setup` 恢复授权缓存或使用私下配置的 `HEROUI_KEY`；不能提交密钥、完整 Pro 包或绕过授权。
@@ -39,6 +39,7 @@ npm start
 npm run package
 ```
 
+- 安装依赖前设置环境变量 `HUGEICONS_NPM_TOKEN`，供 `@hugeicons-pro` 的 CollectUI 私服鉴权。
 - `npm ci` 的 postinstall 会执行 `heroui:setup`。安装脚本不自动读取 `.env`，密钥通过环境配置。
 - `setup:browseros` 获取并校验官方固定版本，不启动浏览器或覆盖已有不同安装。
 - `package` 生成本机应用目录；当前项目使用 ad-hoc 签名，未配置 Developer ID 分发签名、公证或自动更新。不要把项目配置写成“系统找不到证书”。

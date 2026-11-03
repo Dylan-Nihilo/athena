@@ -5,21 +5,21 @@ import {
   InspectorSelect,
   InspectorTextarea,
 } from '../../packages/element-inspector/src';
-import { ActionButton } from './ui';
+import { ActionButton, Icon } from './ui';
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import type { ElementControlSurface } from '../shared/element-controls';
 const ElementControls = lazy(() => import('./ElementControls'));
 import {
-  ArrowUpRight,
-  Check,
-  ChevronRight,
-  Loader2,
-  Scan,
-  SquareDashedMousePointer,
-  Search,
-  Undo2,
-  X,
-} from 'lucide-react';
+  ArrowRight01Icon,
+  ArrowUpRight01Icon,
+  Loading02Icon,
+  ScanIcon,
+  Search01Icon,
+  SquareDashedMousePointerIcon,
+  Tick02Icon,
+  Undo02Icon,
+  XIcon,
+} from '@hugeicons-pro/core-stroke-rounded';
 import type {
   ElementAnimation,
   ElementDetails,
@@ -284,7 +284,7 @@ export function ElementInspector({
     <section className="element-inspector" aria-label="元素检查器" hidden={hidden}>
       <header className="inspector-heading">
         <span className="inspector-mark" aria-hidden>
-          <SquareDashedMousePointer size={18} />
+          <Icon icon={SquareDashedMousePointerIcon} size={18} />
         </span>
         <div className="inspector-target-summary">
           <strong title={details?.name}>{details?.name || '选择一个元素'}</strong>
@@ -306,7 +306,7 @@ export function ElementInspector({
         </div>
         {details?.bounds && (
           <span className="element-dimensions" title="元素尺寸（CSS 像素）">
-            <Scan size={12} aria-hidden />
+            <Icon icon={ScanIcon} size={12} />
             {Math.round(details.bounds.width)} × {Math.round(details.bounds.height)}
           </span>
         )}
@@ -318,7 +318,7 @@ export function ElementInspector({
             title="查找其他元素"
             onPress={() => setSearchOpen((value) => !value)}
           >
-            <Search size={15} />
+            <Icon icon={Search01Icon} size={15} />
           </ActionButton>
         )}
         <ActionButton
@@ -327,7 +327,7 @@ export function ElementInspector({
           title="返回对话"
           onPress={onClose}
         >
-          <X size={15} />
+          <Icon icon={XIcon} size={15} />
         </ActionButton>
       </header>
       <form
@@ -351,7 +351,7 @@ export function ElementInspector({
           );
         }}
       >
-        <Search size={13} />
+        <Icon icon={Search01Icon} size={13} />
         <InspectorSelect
           label="元素查找方式"
           value={searchKind}
@@ -379,7 +379,7 @@ export function ElementInspector({
               {results.truncated ? '+' : ''} 个匹配
             </span>
             <ActionButton onPress={() => setResults(undefined)} aria-label="关闭查找结果">
-              <X size={12} />
+              <Icon icon={XIcon} size={12} />
             </ActionButton>
           </div>
           {results.elements.map((element) => (
@@ -390,14 +390,14 @@ export function ElementInspector({
             >
               <code>{element.tag}</code>
               <span>{element.name || element.text || element.selector}</span>
-              <ChevronRight size={12} />
+              <Icon icon={ArrowRight01Icon} size={12} />
             </ActionButton>
           ))}
         </div>
       )}
       {busy && !details ? (
         <div className="inspector-empty">
-          <Loader2 size={16} className="spin" />
+          <Icon icon={Loading02Icon} size={16} className="spin" />
           读取元素…
         </div>
       ) : details ? (
@@ -410,7 +410,7 @@ export function ElementInspector({
                 onPress={() => void select(ancestor.ref)}
               >
                 {ancestor.tag}
-                <ChevronRight size={10} />
+                <Icon icon={ArrowRight01Icon} size={10} />
               </ActionButton>
             ))}
             <span>{details.tag}</span>
@@ -604,7 +604,7 @@ export function ElementInspector({
               isDisabled={!lastEdit || busy}
               onPress={() => void undo()}
             >
-              <Undo2 size={14} />
+              <Icon icon={Undo02Icon} size={14} />
             </ActionButton>
             {onSourceRequest && (
               <ActionButton
@@ -613,7 +613,7 @@ export function ElementInspector({
                 onPress={() => onSourceRequest(details, sourceChanges())}
               >
                 修改源码
-                <ArrowUpRight size={12} />
+                <Icon icon={ArrowUpRight01Icon} size={12} />
               </ActionButton>
             )}
             {section !== 'adjust' && (
@@ -622,7 +622,12 @@ export function ElementInspector({
                 isDisabled={!dirty || busy || !validMotion}
                 onPress={() => void apply()}
               >
-                {busy ? <Loader2 size={13} className="spin" /> : <Check size={13} />}应用预览
+                {busy ? (
+                  <Icon icon={Loading02Icon} size={13} className="spin" />
+                ) : (
+                  <Icon icon={Tick02Icon} size={13} />
+                )}
+                应用预览
               </ActionButton>
             )}
             <div className="inspector-note inspector-feedback" role="status">
@@ -646,7 +651,7 @@ export function ElementInspector({
               isDisabled={busy}
               onPress={() => void undo()}
             >
-              <Undo2 size={13} />
+              <Icon icon={Undo02Icon} size={13} />
               撤销上次预览
             </ActionButton>
           )}

@@ -110,7 +110,7 @@ BrowserOS neo 以独立后台进程运行，使用专用 profile；页面画面�
 
 ## 开发环境与验证
 
-需要 Node.js 22.12+、npm 和当前 [package.json](../package.json) 声明的依赖。运行：
+需要 Node.js 22.12+ 和 npm。安装前，将 CollectUI 分发的 HugeIcons Pro npm key 设置为当前 shell 或 CI 的环境变量 `HUGEICONS_NPM_TOKEN`。根目录 `.npmrc` 只对 `npm.collectui.pro` 使用该凭据，以安装 `@hugeicons-pro/core-stroke-rounded`。
 
 ```bash
 npm ci

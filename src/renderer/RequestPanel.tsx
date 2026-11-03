@@ -1,7 +1,7 @@
 import { RadioGroup, Radio, Input, TextArea } from '@heroui/react';
-import { ActionButton } from './ui';
+import { ActionButton, Icon } from './ui';
 import { useEffect, useRef, useState } from 'react';
-import { Bot, ShieldCheck } from 'lucide-react';
+import { BotIcon, ShieldCheckIcon } from '@hugeicons-pro/core-stroke-rounded';
 import type { PendingAgentRequest } from '../shared/types';
 
 export function RequestPanel({
@@ -54,7 +54,11 @@ export function RequestPanel({
       aria-label="Agent 待处理事项"
     >
       <div className="request-heading">
-        {pending.kind === 'approval' ? <ShieldCheck size={17} /> : <Bot size={17} />}
+        {pending.kind === 'approval' ? (
+          <Icon icon={ShieldCheckIcon} size={17} />
+        ) : (
+          <Icon icon={BotIcon} size={17} />
+        )}
         <strong>{pending.kind === 'approval' ? pending.request.title : '需要你的回答'}</strong>
         <span className="request-status" role="status">
           {sending ? '提交中' : pending.kind === 'approval' ? '等待确认' : '等待回答'}

@@ -1,5 +1,13 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { AlignCenter, AlignJustify, AlignLeft, AlignRight, Paintbrush, Ruler } from 'lucide-react';
+import {
+  PaintbrushIcon,
+  RulerIcon,
+  TextAlignCenterIcon,
+  TextAlignJustifyCenterIcon,
+  TextAlignLeftIcon,
+  TextAlignRightIcon,
+} from '@hugeicons-pro/core-stroke-rounded';
+import { Icon } from './ui';
 import {
   BorderStyleSample,
   ChoiceControl,
@@ -63,7 +71,13 @@ const Group = createComponentImplementation(
     <PropertySection
       label={props.label}
       icon={
-        props.label === '排版' ? <AlignLeft /> : props.label === '外观' ? <Paintbrush /> : <Ruler />
+        props.label === '排版' ? (
+          <Icon icon={TextAlignLeftIcon} />
+        ) : props.label === '外观' ? (
+          <Icon icon={PaintbrushIcon} />
+        ) : (
+          <Icon icon={RulerIcon} />
+        )
       }
     >
       {(props.children as string[]).map((id) => (
@@ -205,24 +219,24 @@ const ChoicePicker = createComponentImplementation(
   ({ props }) => {
     const editing = useContext(Editing);
     const alignIcons = {
-      left: AlignLeft,
-      center: AlignCenter,
-      right: AlignRight,
-      justify: AlignJustify,
+      left: TextAlignLeftIcon,
+      center: TextAlignCenterIcon,
+      right: TextAlignRightIcon,
+      justify: TextAlignJustifyCenterIcon,
     };
     return (
       <ChoiceControl
         label={props.label}
         value={props.value ?? ''}
         options={(props.options as string[]).map((value) => {
-          const Icon =
+          const icon =
             props.property === 'text-align'
               ? alignIcons[value as keyof typeof alignIcons]
               : undefined;
           return {
             value,
             label: choiceLabels[value] || value,
-            icon: Icon && <Icon size={15} aria-hidden />,
+            icon: icon && <Icon icon={icon} size={15} />,
             preview: props.property === 'border-style' && <BorderStyleSample value={value} />,
           };
         })}

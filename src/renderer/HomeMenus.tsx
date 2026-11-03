@@ -1,19 +1,20 @@
 import { useEffect, useState } from 'react';
 import { Avatar, Button, Description, Dropdown, Label } from '@heroui/react';
 import {
-  ChartNoAxesCombined,
-  Check,
-  ChevronsUpDown,
-  CircleDot,
-  Folder,
-  Globe,
-  Monitor,
-  Moon,
-  MousePointer2,
-  Plus,
-  Settings2,
-  Sun,
-} from 'lucide-react';
+  ChartNoAxesCombinedIcon,
+  CircleDotIcon,
+  Cursor01Icon,
+  Folder01Icon,
+  InternetIcon,
+  MonitorIcon,
+  MoonIcon,
+  PlusIcon,
+  Settings02Icon,
+  Sun01Icon,
+  Tick02Icon,
+  UnfoldMoreIcon,
+} from '@hugeicons-pro/core-stroke-rounded';
+import { Icon } from './ui';
 
 type Appearance = 'light' | 'dark' | 'system';
 const appearanceLabels: Record<Appearance, string> = {
@@ -83,7 +84,7 @@ export function UserMenu({
     <Dropdown>
       <Button variant="ghost" className="local-user-trigger" aria-label="本机用户菜单">
         {identity}
-        <ChevronsUpDown size={14} />
+        <Icon icon={UnfoldMoreIcon} size={14} />
       </Button>
       <Dropdown.Popover placement="top start" offset={8} className="local-user-menu">
         <div className="local-user-menu-identity">{identity}</div>
@@ -96,20 +97,20 @@ export function UserMenu({
           }}
         >
           <Dropdown.Item id="settings" textValue="设置与连接">
-            <Settings2 size={16} />
+            <Icon icon={Settings02Icon} size={16} />
             <Label>设置与连接</Label>
           </Dropdown.Item>
           <Dropdown.Item id="usage" textValue="用量概览">
-            <ChartNoAxesCombined size={16} />
+            <Icon icon={ChartNoAxesCombinedIcon} size={16} />
             <Label>用量概览</Label>
           </Dropdown.Item>
           <Dropdown.Item id="workspace" textValue="选择工作目录">
-            <Folder size={16} />
+            <Icon icon={Folder01Icon} size={16} />
             <Label>选择工作目录…</Label>
           </Dropdown.Item>
           <Dropdown.SubmenuTrigger>
             <Dropdown.Item id="appearance" textValue="外观">
-              <Sun size={16} />
+              <Icon icon={Sun01Icon} size={16} />
               <Label>外观</Label>
               <Description>{appearanceLabels[appearance]}</Description>
               <Dropdown.SubmenuIndicator />
@@ -122,13 +123,14 @@ export function UserMenu({
                 onAction={(key) => setAppearance(key as Appearance)}
               >
                 {(['light', 'dark', 'system'] as const).map((value) => {
-                  const Icon = value === 'light' ? Sun : value === 'dark' ? Moon : Monitor;
+                  const icon =
+                    value === 'light' ? Sun01Icon : value === 'dark' ? MoonIcon : MonitorIcon;
                   return (
                     <Dropdown.Item key={value} id={value} textValue={appearanceLabels[value]}>
-                      <Icon size={16} />
+                      <Icon icon={icon} size={16} />
                       <Label>{appearanceLabels[value]}</Label>
                       <Dropdown.ItemIndicator>
-                        <Check size={14} />
+                        <Icon icon={Tick02Icon} size={14} />
                       </Dropdown.ItemIndicator>
                     </Dropdown.Item>
                   );
@@ -164,7 +166,7 @@ export function WebContextMenu({
         aria-label="添加网页上下文"
         className="web-context-trigger"
       >
-        <Plus size={18} />
+        <Icon icon={PlusIcon} size={18} />
       </Button>
       <Dropdown.Popover placement="top start" offset={12} className="web-context-menu">
         <p className="web-context-heading">添加网页上下文</p>
@@ -177,15 +179,15 @@ export function WebContextMenu({
           }}
         >
           <Dropdown.Item id="page" textValue="当前页面">
-            <Globe size={16} />
+            <Icon icon={InternetIcon} size={16} />
             <Label>当前页面</Label>
           </Dropdown.Item>
           <Dropdown.Item id="element" textValue="选取页面元素" isDisabled={!ready}>
-            <MousePointer2 size={16} />
+            <Icon icon={Cursor01Icon} size={16} />
             <Label>选取页面元素</Label>
           </Dropdown.Item>
           <Dropdown.Item id="record" textValue="录制网页操作" isDisabled={!ready || recording}>
-            <CircleDot size={16} />
+            <Icon icon={CircleDotIcon} size={16} />
             <Label>{recording ? '正在录制网页操作' : '录制网页操作'}</Label>
           </Dropdown.Item>
         </Dropdown.Menu>

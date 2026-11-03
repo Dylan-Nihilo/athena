@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Button, Label, Popover, Slider } from '@heroui/react';
-import { ChevronDown, RotateCw, RotateCcw, X } from 'lucide-react';
+import {
+  ArrowDown01Icon,
+  RotateCcwIcon,
+  RotateCwIcon,
+  XIcon,
+} from '@hugeicons-pro/core-stroke-rounded';
+import { Icon } from './ui';
 import { ChoiceSelect } from './ChoiceSelect';
 import type { Settings } from '../shared/types';
 import type { ModelOption, ModelSelection } from '../shared/usage';
@@ -102,7 +108,7 @@ export function ModelPicker({
         {selection?.effort && (
           <span className="model-picker-effort">{effortName(selection.effort)}</span>
         )}
-        <ChevronDown size={12} />
+        <Icon icon={ArrowDown01Icon} size={12} />
       </Button>
       <Popover.Content placement="top start" offset={10} className="model-controls">
         <Popover.Dialog>
@@ -117,7 +123,7 @@ export function ModelPicker({
                 isDisabled={loading || saving}
                 onPress={() => void refresh(true)}
               >
-                <RotateCw size={16} className={loading ? 'is-refreshing' : ''} />
+                <Icon icon={RotateCwIcon} size={16} className={loading ? 'is-refreshing' : ''} />
               </Button>
               <Button
                 variant="ghost"
@@ -126,7 +132,7 @@ export function ModelPicker({
                 aria-label="关闭模型选择"
                 onPress={() => setOpen(false)}
               >
-                <X size={16} />
+                <Icon icon={XIcon} size={16} />
               </Button>
             </div>
           </div>
@@ -186,7 +192,7 @@ export function ModelPicker({
                         void select({ model: current.model, effort: current.defaultEffort });
                     }}
                   >
-                    <RotateCcw size={13} />
+                    <Icon icon={RotateCcwIcon} size={13} />
                   </Button>
                 </div>
                 <Slider.Track>

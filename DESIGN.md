@@ -38,7 +38,8 @@
 | Tailwind CSS / Vite 插件          | `4.3.3`         |
 | React Aria Components             | `1.22.1`        |
 | Motion                            | `14.9.0`        |
-| Lucide React                      | `^1.64.0`       |
+| `@hugeicons-pro/core-stroke-rounded` | `4.4.0`         |
+| `@hugeicons/react`                | `1.1.10`        |
 
 使用 HeroUI v3 的 compound API，例如 `Card.Header`、`Popover.Content`；交互组件使用 `onPress`。通用选择使用现有 `ChoiceSelect`，工具栏按钮使用 `ActionButton`。保留隐藏的原生表单辅助节点，不用自制点击层破坏键盘操作。
 
@@ -67,7 +68,7 @@ HeroUI Pro 需要有效商业授权。沿用项目安装脚本和授权缓存，
 
 正式应用标识使用 [athena-profile.png](src/renderer/assets/brand/athena-profile.png)，打包图标使用项目既有 resources 资产。不要替换为未选定的 v7 或其他候选素材，也不要引用临时 Figma 图片 URL。
 
-CLI 和服务标识保留上游图形与原色，来源见 [图标说明](src/renderer/assets/agents/README.md)。通用操作图标复用 Lucide，语义相同的动作保持一致。
+CLI 和服务标识保留上游图形与原色，来源见 [图标说明](src/renderer/assets/agents/README.md)。通用操作图标使用 HugeIcons Pro 的 Stroke Rounded 风格，通过 `HugeiconsIcon` 渲染。语义相同的动作保持一致。
 
 侧栏用户头像来自本机用户名字首字母，名称由本机状态提供；它不是账号登录、云端身份或订阅入口。没有真实账户服务时不添加账户、订阅和计费管理界面。
 

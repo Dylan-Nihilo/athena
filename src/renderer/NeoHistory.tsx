@@ -1,6 +1,12 @@
-import { ActionButton } from './ui';
+import { ActionButton, Icon } from './ui';
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Check, Loader2, RefreshCw, X } from 'lucide-react';
+import {
+  ArrowLeft02Icon,
+  Loading02Icon,
+  RefreshCwIcon,
+  Tick02Icon,
+  XIcon,
+} from '@hugeicons-pro/core-stroke-rounded';
 import type { NativeNeoState, NeoSessionDetail, NeoSessionSummary } from '../shared/types';
 
 const names: Record<string, string> = {
@@ -97,7 +103,7 @@ export function NeoHistory({
           isDisabled={loading || state?.status !== 'ready'}
           onPress={() => void load()}
         >
-          <RefreshCw size={16} className={loading ? 'spin' : ''} />
+          <Icon icon={RefreshCwIcon} size={16} className={loading ? 'spin' : ''} />
         </ActionButton>
       </div>
       {state?.status !== 'ready' ? (
@@ -110,11 +116,11 @@ export function NeoHistory({
       ) : selected ? (
         <>
           <ActionButton className="text-button neo-back" onPress={() => setSelected(undefined)}>
-            <ArrowLeft size={13} />
+            <Icon icon={ArrowLeft02Icon} size={13} />
             全部任务
           </ActionButton>
           {loading && !detail ? (
-            <Loader2 className="spin" size={20} />
+            <Icon icon={Loading02Icon} className="spin" size={20} />
           ) : detail ? (
             <>
               <p className="neo-session-meta">
@@ -145,7 +151,11 @@ export function NeoHistory({
                             <pre>{step.argsJson || '—'}</pre>
                           </details>
                         </div>
-                        {failed ? <X size={13} /> : <Check size={13} className="step-check" />}
+                        {failed ? (
+                          <Icon icon={XIcon} size={13} />
+                        ) : (
+                          <Icon icon={Tick02Icon} size={13} className="step-check" />
+                        )}
                       </li>
                     );
                   })}

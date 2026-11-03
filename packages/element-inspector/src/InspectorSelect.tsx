@@ -1,4 +1,5 @@
-import { Check, ChevronDown } from 'lucide-react';
+import { HugeiconsIcon } from '@hugeicons/react';
+import { ArrowDown01Icon, Tick02Icon } from '@hugeicons-pro/core-stroke-rounded';
 import type { ReactNode } from 'react';
 import { Button, ListBox, ListBoxItem, Popover, Select, SelectValue } from 'react-aria-components';
 
@@ -44,7 +45,7 @@ export function InspectorSelect({
         <SelectValue className="ei-select-value">
           {({ selectedText }) => selectedText || '当前值'}
         </SelectValue>
-        <ChevronDown className="ei-select-chevron" size={13} aria-hidden />
+        <HugeiconsIcon icon={ArrowDown01Icon} className="ei-select-chevron" size={13} aria-hidden />
       </Button>
       <Popover className="ei-select-popup" placement="bottom start" offset={4}>
         <ListBox items={items} className="ei-select-list">
@@ -54,7 +55,14 @@ export function InspectorSelect({
                 <>
                   {option.preview}
                   <span className="ei-option-label">{option.label}</span>
-                  {isSelected && <Check className="ei-option-check" size={14} aria-hidden />}
+                  {isSelected && (
+                    <HugeiconsIcon
+                      icon={Tick02Icon}
+                      className="ei-option-check"
+                      size={14}
+                      aria-hidden
+                    />
+                  )}
                 </>
               )}
             </ListBoxItem>

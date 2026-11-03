@@ -84,7 +84,7 @@
 <details>
 <summary><strong>从源码开发</strong></summary>
 
-需要 Node.js **22.12+**、npm，以及有效的 HeroUI Pro 构建授权。
+需要 Node.js **22.12+**、npm 和 HeroUI Pro 构建授权。运行 `npm ci` 前，将 CollectUI 分发的 HugeIcons Pro npm key 注入环境变量 `HUGEICONS_NPM_TOKEN`。项目的 `.npmrc` 仅将 `@hugeicons-pro` 指向 CollectUI 私服，`@hugeicons/react` 渲染器从公共 npm 安装。
 
 ```bash
 npm ci

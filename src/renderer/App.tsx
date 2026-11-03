@@ -1,39 +1,38 @@
-import { ActionButton } from './ui';
+import { ActionButton, Icon } from './ui';
 import { Button, Card, Dropdown, Label, Description, Input, Tabs } from '@heroui/react';
 import { Sidebar, PromptInput, ChatMessage as ProChatMessage } from '@heroui-pro/react';
 import athenaLogo from './assets/brand/athena-profile.png';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Markdown from 'react-markdown';
 import {
-  ArrowUpRight,
-  ChartNoAxesCombined,
-  Check,
-  ChevronDown,
-  ChevronRight,
-  Circle,
-  CircleDot,
-  Command,
-  Copy,
-  FolderOpen,
-  Folder,
-  Globe,
-  Search,
-  Globe2,
-  Link2,
-  Loader2,
-  MessageSquare,
-  MousePointer2,
-  PanelLeftClose,
-  PanelLeftOpen,
-  PanelRightOpen,
-  Plus,
-  RefreshCw,
-  Settings2,
-  ShieldCheck,
-  Terminal,
-  Unplug,
-  X,
-} from 'lucide-react';
+  ArrowDown01Icon,
+  ArrowUpRight01Icon,
+  ChartNoAxesCombinedIcon,
+  CircleDotIcon,
+  CircleIcon,
+  CommandIcon,
+  CopyIcon,
+  Cursor01Icon,
+  EarthIcon,
+  Folder01Icon,
+  FolderOpenIcon,
+  InternetIcon,
+  Link02Icon,
+  Loading02Icon,
+  MessageSquareIcon,
+  PanelLeftCloseIcon,
+  PanelLeftOpenIcon,
+  PanelRightOpenIcon,
+  PlusIcon,
+  RefreshCwIcon,
+  Search01Icon,
+  Settings02Icon,
+  ShieldCheckIcon,
+  TerminalIcon,
+  Tick02Icon,
+  UnplugIcon,
+  XIcon,
+} from '@hugeicons-pro/core-stroke-rounded';
 import { BrowserPane } from './BrowserPane';
 import { ElementInspector } from './ElementInspector';
 import { ExecutionPanel } from './ExecutionPanel';
@@ -719,17 +718,17 @@ export default function App() {
         <Tabs.ListContainer>
           <Tabs.List aria-label="设置分类" className="settings-tabs">
             <Tabs.Tab id="agent">
-              <Terminal size={15} />
+              <Icon icon={TerminalIcon} size={15} />
               本机 Agent
               <Tabs.Indicator />
             </Tabs.Tab>
             <Tabs.Tab id="browser">
-              <Globe2 size={15} />
+              <Icon icon={EarthIcon} size={15} />
               浏览器
               <Tabs.Indicator />
             </Tabs.Tab>
             <Tabs.Tab id="feishu">
-              <Link2 size={15} />
+              <Icon icon={Link02Icon} size={15} />
               飞书
               <Tabs.Indicator />
             </Tabs.Tab>
@@ -750,7 +749,7 @@ export default function App() {
                   isDisabled={refreshing}
                   onPress={() => void refreshAgents()}
                 >
-                  <RefreshCw size={16} className={refreshing ? 'spin' : ''} />
+                  <Icon icon={RefreshCwIcon} size={16} className={refreshing ? 'spin' : ''} />
                 </ActionButton>
               </div>
               <Card className="agent-connection-card">
@@ -829,7 +828,7 @@ export default function App() {
               </div>
               <Card className="settings-workspace-card">
                 <Card.Content>
-                  <Folder size={20} />
+                  <Icon icon={Folder01Icon} size={20} />
                   <div>
                     <span>工作目录</span>
                     <strong>{settings.workspace || '尚未选择工作目录'}</strong>
@@ -852,7 +851,7 @@ export default function App() {
             <Tabs.Panel id="browser" className="integration-settings-panel">
               <div className="integration-heading">
                 <div className="integration-icon large">
-                  <Globe2 size={24} />
+                  <Icon icon={EarthIcon} size={24} />
                 </div>
                 <div>
                   <h3>BrowserOS neo</h3>
@@ -872,7 +871,7 @@ export default function App() {
                   {browser.binaryPath || settings.browserPath || '尚未选择 BrowserOS neo'}
                 </p>
                 <ActionButton className="secondary-button" onPress={() => void selectBrowser()}>
-                  <FolderOpen size={14} />
+                  <Icon icon={FolderOpenIcon} size={14} />
                   选择 BrowserOS neo
                 </ActionButton>
               </div>
@@ -884,7 +883,7 @@ export default function App() {
                 className="text-button"
                 onPress={() => openLink('https://browseros.com/')}
               >
-                <ArrowUpRight size={14} />
+                <Icon icon={ArrowUpRight01Icon} size={14} />
                 下载 BrowserOS neo
               </ActionButton>
             </Tabs.Panel>
@@ -893,7 +892,7 @@ export default function App() {
             <Tabs.Panel id="feishu" className="integration-settings-panel">
               <div className="integration-heading">
                 <div className="integration-icon large">
-                  <Link2 size={24} />
+                  <Icon icon={Link02Icon} size={24} />
                 </div>
                 <div>
                   <h3>把任务带到飞书</h3>
@@ -913,20 +912,20 @@ export default function App() {
               </div>
               {feishu.status === 'restoring' ? (
                 <div className="feishu-paired">
-                  <Loader2 size={26} className="spin" />
+                  <Icon icon={Loading02Icon} size={26} className="spin" />
                   <h4>正在恢复飞书连接</h4>
                   <p>如果 macOS 显示钥匙串授权提示，请核对应用名称后完成确认。</p>
                 </div>
               ) : feishu.status === 'error' && feishu.restoreFailed ? (
                 <div className="feishu-paired">
-                  <ShieldCheck size={28} />
+                  <Icon icon={ShieldCheckIcon} size={28} />
                   <h4>暂时无法读取飞书配置</h4>
                   <p>原有配置不会被覆盖。检查系统授权和存储目录后，可以重试恢复。</p>
                   <ActionButton
                     className="primary-button"
                     onPress={() => void action('feishu:restore')}
                   >
-                    <RefreshCw size={14} />
+                    <Icon icon={RefreshCwIcon} size={14} />
                     重试恢复连接
                   </ActionButton>
                 </div>
@@ -935,7 +934,7 @@ export default function App() {
                   {feishu.setupQr ? (
                     <img src={feishu.setupQr} alt="飞书新应用授权二维码" />
                   ) : (
-                    <Loader2 size={32} className="spin" />
+                    <Icon icon={Loading02Icon} size={32} className="spin" />
                   )}
                   <div>
                     <strong>使用飞书扫码</strong>
@@ -946,7 +945,7 @@ export default function App() {
                         onPress={() => openLink(feishu.setupUrl!)}
                       >
                         在浏览器中打开
-                        <ArrowUpRight size={13} />
+                        <Icon icon={ArrowUpRight01Icon} size={13} />
                       </ActionButton>
                     )}
                     <ActionButton
@@ -960,7 +959,7 @@ export default function App() {
               ) : feishu.status === 'connected' ? (
                 <div className="feishu-paired">
                   <div className="connected-check">
-                    <Check size={21} />
+                    <Icon icon={Tick02Icon} size={21} />
                   </div>
                   <h4>{feishu.paired ? '飞书已准备好' : '连接已建立，再完成一次配对'}</h4>
                   {feishu.paired ? (
@@ -979,7 +978,7 @@ export default function App() {
                         }}
                       >
                         <code>绑定 {feishu.pairingCode}</code>
-                        <Copy size={15} />
+                        <Icon icon={CopyIcon} size={15} />
                       </ActionButton>
                       <small>配对后，仅接受你的任务指令。</small>
                       {feishu.appId && (
@@ -992,7 +991,7 @@ export default function App() {
                           }
                         >
                           打开飞书机器人
-                          <ArrowUpRight size={13} />
+                          <Icon icon={ArrowUpRight01Icon} size={13} />
                         </ActionButton>
                       )}
                     </>
@@ -1001,9 +1000,9 @@ export default function App() {
               ) : (
                 <div className="feishu-intro">
                   <div className="connection-path">
-                    <MessageSquare size={20} />
+                    <Icon icon={MessageSquareIcon} size={20} />
                     <span />
-                    <Command size={20} />
+                    <Icon icon={CommandIcon} size={20} />
                   </div>
                   <p>
                     {feishu.appId
@@ -1016,11 +1015,11 @@ export default function App() {
                     onPress={() => void (feishu.appId ? action('feishu:connect') : setupFeishu())}
                   >
                     {connecting ? (
-                      <Loader2 size={15} className="spin" />
+                      <Icon icon={Loading02Icon} size={15} className="spin" />
                     ) : feishu.appId ? (
-                      <Link2 size={15} />
+                      <Icon icon={Link02Icon} size={15} />
                     ) : (
-                      <Plus size={15} />
+                      <Icon icon={PlusIcon} size={15} />
                     )}
                     {feishu.appId ? '连接已保存的机器人' : '创建专用机器人'}
                   </ActionButton>
@@ -1041,7 +1040,7 @@ export default function App() {
                       className="text-button"
                       onPress={() => void action('feishu:disconnect')}
                     >
-                      <Unplug size={13} />
+                      <Icon icon={UnplugIcon} size={13} />
                       断开连接
                     </ActionButton>
                   )}
@@ -1054,7 +1053,7 @@ export default function App() {
                   <details className="manual-connection">
                     <summary>
                       使用已有应用凭据
-                      <ChevronDown size={14} />
+                      <Icon icon={ArrowDown01Icon} size={14} />
                     </summary>
                     <form
                       onSubmit={(event) => {
@@ -1149,7 +1148,7 @@ export default function App() {
                   aria-label="收起侧栏"
                   onPress={() => setSidebar(false)}
                 >
-                  <PanelLeftClose size={17} />
+                  <Icon icon={PanelLeftCloseIcon} size={17} />
                 </ActionButton>
               </div>
               <Sidebar.Header className="brand">
@@ -1161,12 +1160,12 @@ export default function App() {
                 variant="secondary"
                 onPress={() => void newConversation()}
               >
-                <Plus size={17} />
+                <Icon icon={PlusIcon} size={17} />
                 <span>新对话</span>
                 <kbd>⌘N</kbd>
               </ActionButton>
               <ActionButton className="search-conversation" onPress={() => setSearchOpen(true)}>
-                <Search size={17} />
+                <Icon icon={Search01Icon} size={17} />
                 <span>搜索对话</span>
                 <kbd>⌘K</kbd>
               </ActionButton>
@@ -1175,9 +1174,9 @@ export default function App() {
                 onPress={() => void workspace()}
                 title={settings.workspace}
               >
-                <Folder size={16} />
+                <Icon icon={Folder01Icon} size={16} />
                 <span>{basename(settings.workspace)}</span>
-                <ChevronDown size={13} />
+                <Icon icon={ArrowDown01Icon} size={13} />
               </ActionButton>
               <div className="sidebar-section-label">对话</div>
               <Sidebar.Content className="conversation-list" aria-label="对话列表">
@@ -1190,9 +1189,9 @@ export default function App() {
                       title={item.title}
                     >
                       {item.messages.some((message) => message.status === 'streaming') ? (
-                        <Loader2 size={14} className="spin" />
+                        <Icon icon={Loading02Icon} size={14} className="spin" />
                       ) : (
-                        <MessageSquare size={14} />
+                        <Icon icon={MessageSquareIcon} size={14} />
                       )}
                       <span>{item.title}</span>
                     </ActionButton>
@@ -1207,14 +1206,14 @@ export default function App() {
                   aria-current={showUsage ? 'page' : undefined}
                   onPress={openUsage}
                 >
-                  <ChartNoAxesCombined size={16} />
+                  <Icon icon={ChartNoAxesCombinedIcon} size={16} />
                   <span>用量</span>
                 </ActionButton>
                 <ActionButton
                   className={`sidebar-settings ${settingsTab ? 'active' : ''}`}
                   onPress={() => openSettings('agent')}
                 >
-                  <Settings2 size={16} />
+                  <Icon icon={Settings02Icon} size={16} />
                   <span>设置与连接</span>
                 </ActionButton>
                 <UserMenu
@@ -1234,7 +1233,7 @@ export default function App() {
                       aria-label="展开侧栏"
                       onPress={() => setSidebar(true)}
                     >
-                      <PanelLeftOpen size={17} />
+                      <Icon icon={PanelLeftOpenIcon} size={17} />
                     </ActionButton>
                   )}
                   <span>
@@ -1264,7 +1263,7 @@ export default function App() {
                         >
                           <AgentIcon agent={settings.agent} size={15} />
                           {currentConnection?.status === 'starting' ? (
-                            <Loader2 size={12} className="spin" />
+                            <Icon icon={Loading02Icon} size={12} className="spin" />
                           ) : (
                             <span
                               className={`status-dot ${agentStatus === '已就绪' ? 'online' : ''}`}
@@ -1284,7 +1283,7 @@ export default function App() {
                           if (browserVisible) composer.current?.querySelector('textarea')?.focus();
                         }}
                       >
-                        <PanelRightOpen size={16} />
+                        <Icon icon={PanelRightOpenIcon} size={16} />
                         <span>{browserVisible ? '收起浏览器' : '打开浏览器'}</span>
                       </ActionButton>
                     </>
@@ -1312,12 +1311,12 @@ export default function App() {
                   <Tabs.ListContainer className="workspace-view-tabs">
                     <Tabs.List aria-label="工作区视图">
                       <Tabs.Tab id="conversation">
-                        <MessageSquare size={14} />
+                        <Icon icon={MessageSquareIcon} size={14} />
                         对话
                         <Tabs.Indicator />
                       </Tabs.Tab>
                       <Tabs.Tab id="element" isDisabled={browser.status !== 'ready'}>
-                        <Settings2 size={14} />
+                        <Icon icon={Settings02Icon} size={14} />
                         元素
                         <Tabs.Indicator />
                       </Tabs.Tab>
@@ -1358,13 +1357,13 @@ export default function App() {
                                 </ProChatMessage.User>
                                 {message.source === 'feishu' && (
                                   <div className="message-source">
-                                    <Link2 size={11} />
+                                    <Icon icon={Link02Icon} size={11} />
                                     来自飞书
                                   </div>
                                 )}
                                 {message.context && message.source !== 'feishu' && (
                                   <div className="message-context">
-                                    <MousePointer2 size={11} />
+                                    <Icon icon={Cursor01Icon} size={11} />
                                     已附加页面上下文
                                   </div>
                                 )}
@@ -1429,7 +1428,7 @@ export default function App() {
                                         showToast('已复制回答');
                                       }}
                                     >
-                                      <Copy size={13} />
+                                      <Icon icon={CopyIcon} size={13} />
                                     </ActionButton>
                                     {message.neoSessionId && (
                                       <ActionButton
@@ -1500,7 +1499,7 @@ export default function App() {
                       <PromptInput.Shell>
                         {selected && (
                           <div className="selected-context">
-                            <MousePointer2 size={13} />
+                            <Icon icon={Cursor01Icon} size={13} />
                             <span title={selected.name || selected.tag}>
                               {selected.name || selected.tag}
                             </span>
@@ -1510,7 +1509,7 @@ export default function App() {
                               aria-label="移除选中元素"
                               onPress={() => setSelected(undefined)}
                             >
-                              <X size={12} />
+                              <Icon icon={XIcon} size={12} />
                             </ActionButton>
                           </div>
                         )}
@@ -1551,7 +1550,7 @@ export default function App() {
                                 <span
                                   className={`status-dot ${currentAgent?.available ? 'online' : ''}`}
                                 />
-                                <ChevronDown size={12} />
+                                <Icon icon={ArrowDown01Icon} size={12} />
                               </Button>
                               <Dropdown.Popover placement="top start" className="agent-menu">
                                 <Dropdown.Menu
@@ -1583,13 +1582,17 @@ export default function App() {
                                           </Description>
                                         </div>
                                         {agent.id === settings.agent && (
-                                          <Check size={14} className="agent-selected" />
+                                          <Icon
+                                            icon={Tick02Icon}
+                                            size={14}
+                                            className="agent-selected"
+                                          />
                                         )}
                                       </Dropdown.Item>
                                     ))}
                                   </Dropdown.Section>
                                   <Dropdown.Item id="manage" textValue="管理本机 Agent">
-                                    <Settings2 size={15} />
+                                    <Icon icon={Settings02Icon} size={15} />
                                     <Label>管理本机 Agent</Label>
                                   </Dropdown.Item>
                                 </Dropdown.Menu>
@@ -1618,7 +1621,7 @@ export default function App() {
                     </PromptInput>
                     {!loaded ? (
                       <p className="composer-availability" role="status">
-                        <Loader2 size={14} className="spin" />
+                        <Icon icon={Loading02Icon} size={14} className="spin" />
                         正在读取本机配置…
                       </p>
                     ) : setupRequired ? (
@@ -1668,34 +1671,34 @@ export default function App() {
                     {isHome && (
                       <div className="welcome-actions">
                         <ActionButton onPress={showCurrentPage}>
-                          <Globe size={18} />
+                          <Icon icon={InternetIcon} size={18} />
                           <span>查看当前页面</span>
                           <small>理解页面内容与结构</small>
-                          <ArrowUpRight size={16} />
+                          <Icon icon={ArrowUpRight01Icon} size={16} />
                         </ActionButton>
                         <ActionButton
                           isDisabled={browser.status !== 'ready'}
                           onPress={selectPageElement}
                         >
-                          <MousePointer2 size={18} />
+                          <Icon icon={Cursor01Icon} size={18} />
                           <span>选取并修改元素</span>
                           <small>在网页中直接预览调整</small>
-                          <ArrowUpRight size={16} />
+                          <Icon icon={ArrowUpRight01Icon} size={16} />
                         </ActionButton>
                         <ActionButton
                           isDisabled={browser.status !== 'ready' || browser.recording}
                           onPress={recordPage}
                         >
-                          <CircleDot size={18} />
+                          <Icon icon={CircleDotIcon} size={18} />
                           <span>录制一段操作</span>
                           <small>保存步骤，交给 Agent 分析</small>
-                          <ArrowUpRight size={16} />
+                          <Icon icon={ArrowUpRight01Icon} size={16} />
                         </ActionButton>
                       </div>
                     )}
                   </div>
                   <div className="composer-footer">
-                    <Folder size={14} />
+                    <Icon icon={Folder01Icon} size={14} />
                     <ActionButton onPress={() => void workspace()} title={settings.workspace}>
                       {basename(settings.workspace)}
                     </ActionButton>
@@ -1797,10 +1800,14 @@ export default function App() {
                 className={`app-toast ${toast.error ? 'error' : ''}`}
                 role={toast.error ? 'alert' : 'status'}
               >
-                {toast.error ? <Circle size={14} /> : <Check size={14} />}
+                {toast.error ? (
+                  <Icon icon={CircleIcon} size={14} />
+                ) : (
+                  <Icon icon={Tick02Icon} size={14} />
+                )}
                 <span>{toast.text}</span>
                 <ActionButton aria-label="关闭提示" onPress={() => setToast(undefined)}>
-                  <X size={13} />
+                  <Icon icon={XIcon} size={13} />
                 </ActionButton>
               </div>
             )}

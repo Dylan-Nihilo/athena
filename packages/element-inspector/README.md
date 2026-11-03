@@ -2,12 +2,14 @@
 
 用于实时 CSS 编辑的受控 React 组件。公共入口为 `src/index.ts`。库只处理属性值和交互，宿主负责选区、预览与撤销。独立样张使用同一入口，无需启动 Electron。
 
-在工作树根目录运行以下命令。
+在工作树根目录安装 Athena 的依赖后，运行以下命令。
 
 ```sh
 npm --prefix packages/element-inspector run dev
 npm --prefix packages/element-inspector run build
 ```
+
+单独在本包目录安装时，先在环境中设置 CollectUI 分发的 `HUGEICONS_NPM_TOKEN`，再执行 `npm install --userconfig ../../.npmrc`，以复用仓库的 HugeIcons Pro registry 配置。
 
 构建输出在此包的 `dist/` 中，包含 ES 模块、TypeScript 声明与独立样式表。消费构建产物时引入包入口及其样式。
 
