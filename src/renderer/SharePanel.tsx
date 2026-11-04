@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Input, Modal } from '@heroui/react';
 import { ChoiceSelect } from './ChoiceSelect';
-import { Copy, Hand, Share2, Users } from 'lucide-react';
+import { CopyIcon, HandIcon, Share02Icon, UsersIcon } from '@hugeicons-pro/core-stroke-rounded';
 import type { ShareState } from '../shared/share';
-import { ActionButton } from './ui';
+import { ActionButton, Icon } from './ui';
 
 export function SharePanel({
   state,
@@ -47,7 +47,11 @@ export function SharePanel({
         onPress={() => setOpen(true)}
         isDisabled={!ready}
       >
-        {state?.active ? <Users size={14} /> : <Share2 size={14} />}
+        {state?.active ? (
+          <Icon icon={UsersIcon} size={14} />
+        ) : (
+          <Icon icon={Share02Icon} size={14} />
+        )}
         {pending
           ? `${pending} 人等待加入`
           : state?.active
@@ -129,7 +133,7 @@ export function SharePanel({
                               setCopied(true);
                             }}
                           >
-                            <Copy size={15} />
+                            <Icon icon={CopyIcon} size={15} />
                             {copied ? '已复制' : '复制'}
                           </ActionButton>
                         </div>
@@ -188,7 +192,7 @@ export function SharePanel({
                             </span>
                             {p.requestedControl && (
                               <span className="share-request">
-                                <Hand size={13} />
+                                <Icon icon={HandIcon} size={13} />
                                 请求操作页面
                               </span>
                             )}

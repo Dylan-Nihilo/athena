@@ -1,3 +1,4 @@
+import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
@@ -20,6 +21,11 @@ export default defineConfig(({ command }) => ({
   build: {
     outDir: '../../dist/renderer',
     emptyOutDir: true,
-    rollupOptions: { input: { main: 'src/renderer/index.html', share: 'src/renderer/share.html' } },
+    rollupOptions: {
+      input: {
+        main: resolve(import.meta.dirname, 'src/renderer/index.html'),
+        share: resolve(import.meta.dirname, 'src/renderer/share.html'),
+      },
+    },
   },
 }));

@@ -1,0 +1,132 @@
+.reasoning-slider {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 8px 8px 0;
+  margin-top: 6px;
+  border-top: 1px solid var(--separator);
+}
+.reasoning-heading,
+.reasoning-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.reasoning-heading [data-slot='label'],
+.reasoning-single .reasoning-heading > span {
+  flex: none;
+  color: var(--secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+.reasoning-heading output {
+  margin-inline-start: auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: end;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.reasoning-heading .reasoning-reset {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  color: var(--muted);
+}
+.reasoning-single .reasoning-heading {
+  min-height: 32px;
+}
+.reasoning-single button {
+  min-width: 0;
+  max-width: 55%;
+  height: auto;
+  min-height: 32px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.reasoning-single button[aria-disabled='true'] {
+  margin-inline-start: auto;
+  cursor: default;
+}
+.reasoning-slider[data-unset] .slider__thumb:not([data-focus-visible]) {
+  opacity: 0;
+}
+.reasoning-slider .slider__track {
+  width: calc(100% - 24px);
+  height: 34px;
+  margin-inline: 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  cursor: pointer;
+  touch-action: none;
+}
+.reasoning-scale {
+  pointer-events: none;
+  position: absolute;
+  inset: 0 -1.5px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.reasoning-tick {
+  width: 3px;
+  border-radius: 3px;
+  background: var(--muted);
+  opacity: 0.32;
+  transform: scaleY(0.65);
+}
+.reasoning-tick[data-filled] {
+  background: var(--ink);
+  opacity: 1;
+  transform: scaleY(1);
+}
+.reasoning-slider .slider__thumb {
+  width: 16px;
+  height: 28px;
+  border: 2px solid var(--overlay);
+  border-radius: 8px;
+  background: var(--ink);
+}
+.reasoning-slider .slider__thumb::after {
+  width: 2px;
+  height: 10px;
+  background: var(--accent-foreground);
+  box-shadow: none;
+}
+.reasoning-range {
+  justify-content: space-between;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.reasoning-range span {
+  max-width: 48%;
+  overflow-wrap: anywhere;
+}
+.reasoning-slider[data-disabled] .slider__track {
+  cursor: default;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .reasoning-tick {
+    transition:
+      transform 160ms ease-out,
+      opacity 160ms ease-out;
+  }
+  .reasoning-slider[data-crest] .reasoning-tick {
+    animation-name: reasoning-crest;
+    animation-duration: 300ms;
+    animation-timing-function: ease-out;
+  }
+  @keyframes reasoning-crest {
+    0%,
+    100% {
+      transform: scaleY(1);
+    }
+    38% {
+      transform: scaleY(1.55) skewX(-9deg);
+    }
+  }
+}

@@ -1,25 +1,23 @@
+import { NavigationArrow, TurnIcon } from './HoverIcons';
 import { Input, Tabs } from '@heroui/react';
 import { Segment } from '@heroui-pro/react';
 import { ChoiceSelect } from './ChoiceSelect';
-import { ActionButton } from './ui';
+import { ActionButton, Icon } from './ui';
 import { useEffect, useRef, useState } from 'react';
 import {
-  ArrowLeft,
-  ArrowRight,
-  ArrowUpRight,
-  Check,
-  Circle,
-  Download,
-  Globe2,
-  Loader2,
-  MousePointer2,
-  SlidersHorizontal,
-  Play,
-  Plus,
-  RefreshCw,
-  Square,
-  X,
-} from 'lucide-react';
+  ArrowUpRight01Icon,
+  CircleIcon,
+  Cursor01Icon,
+  Download01Icon,
+  EarthIcon,
+  Loading02Icon,
+  PlayIcon,
+  RefreshCwIcon,
+  SlidersHorizontalIcon,
+  StopIcon,
+  Tick02Icon,
+  XIcon,
+} from '@hugeicons-pro/core-stroke-rounded';
 import type {
   BrowserFrame,
   BrowserInput,
@@ -117,6 +115,20 @@ export function BrowserPane({
   const expectedEpoch = useRef(state.viewport?.epoch);
   expectedEpoch.current = state.viewport?.epoch;
   const activeTab = useRef(state.activeTabId);
+  const tabList = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const list = tabList.current;
+    if (!list) return;
+    const observer = new ResizeObserver(() => {
+      const tab = list.querySelector('.is-active')?.getBoundingClientRect();
+      if (!tab) return;
+      const bounds = list.getBoundingClientRect();
+      if (tab.left < bounds.left) list.scrollLeft += tab.left - bounds.left;
+      else if (tab.right > bounds.right) list.scrollLeft += tab.right - bounds.right;
+    });
+    observer.observe(list);
+    return () => observer.disconnect();
+  }, [state.activeTabId, state.tabs?.length]);
   const surface = useRef<HTMLDivElement>(null);
   const keyboard = useRef<HTMLTextAreaElement>(null);
   const address = useRef<HTMLInputElement>(null);
@@ -470,17 +482,63 @@ export function BrowserPane({
       setTabBusy(false);
     }
   };
+  const neoStatus =
+    neo?.status === 'ready' ? '已连接' : neo?.status === 'starting' ? '连接中' : '未连接';
   return (
     <section className="browser-pane" aria-label="浏览器">
       <header className="browser-heading">
-        <div className="browser-heading-name">
-          <Globe2 size={16} />
-          <span>浏览器</span>
-          <span className="engine-label" title={neo?.error || neo?.version}>
-            Neo{' '}
-            {neo?.status === 'ready' ? '已连接' : neo?.status === 'starting' ? '连接中' : '未连接'}
-          </span>
-        </div>
+        <span className="engine-label" title={neo?.error || neo?.version || `Neo ${neoStatus}`}>
+          <span aria-hidden className={`status-dot ${neo?.status === 'ready' ? 'online' : ''}`} />
+          Neo {neoStatus}
+        </span>
+        <Tabs
+          className="browser-tabstrip"
+          selectedKey={state.activeTabId || ''}
+          onSelectionChange={(key) => {
+            setMode('page');
+            void changeTab('browser:switch-tab', String(key));
+          }}
+        >
+          <Tabs.List ref={tabList} className="browser-tabbar" aria-label="网页标签">
+            {(state.tabs ?? []).map((tab) => (
+              <Tabs.Tab
+                className={`browser-tab ${tab.id === state.activeTabId ? 'is-active' : ''}`}
+                key={tab.id}
+                id={tab.id}
+                aria-label={tab.title || '新标签页'}
+                isDisabled={tabBusy}
+              >
+                {tab.loading ? (
+                  <Icon icon={Loading02Icon} size={12} className="spin" />
+                ) : (
+                  <Icon icon={EarthIcon} size={12} />
+                )}
+                <span title={tab.url === 'about:blank' ? '新标签页' : tab.url}>
+                  {tab.title || '新标签页'}
+                </span>
+                <ActionButton
+                  className="tab-close"
+                  aria-label={`关闭标签 ${tab.title || '新标签页'}`}
+                  isDisabled={tabBusy}
+                  onPress={() => void changeTab('browser:close-tab', tab.id)}
+                >
+                  <Icon icon={XIcon} size={12} />
+                </ActionButton>
+              </Tabs.Tab>
+            ))}
+          </Tabs.List>
+          <ActionButton
+            className="icon-button new-tab-button"
+            aria-label="新建标签页"
+            title="新建标签页 ⌘ T"
+            isDisabled={!ready || tabBusy}
+            onPress={() => void newTab()}
+          >
+            {({ isHovered, isDisabled }) => (
+              <TurnIcon kind="plus" size={15} hovered={isHovered && !isDisabled} />
+            )}
+          </ActionButton>
+        </Tabs>
         <SharePanel state={share} ready={ready} onAction={onAction} />
         <ActionButton
           className="icon-button quiet"
@@ -488,7 +546,7 @@ export function BrowserPane({
           title="收起浏览器"
           onPress={onClose}
         >
-          <X size={16} />
+          <Icon icon={XIcon} size={16} />
         </ActionButton>
       </header>
       {share?.active && (
@@ -510,48 +568,6 @@ export function BrowserPane({
           )}
         </div>
       )}
-      <Tabs
-        className="browser-tabstrip"
-        selectedKey={state.activeTabId || ''}
-        onSelectionChange={(key) => {
-          setMode('page');
-          void changeTab('browser:switch-tab', String(key));
-        }}
-      >
-        <Tabs.List className="browser-tabbar" aria-label="网页标签">
-          {(state.tabs ?? []).map((tab) => (
-            <Tabs.Tab
-              className={`browser-tab ${tab.id === state.activeTabId ? 'is-active' : ''}`}
-              key={tab.id}
-              id={tab.id}
-              aria-label={tab.title || '新标签页'}
-              isDisabled={tabBusy}
-            >
-              {tab.loading ? <Loader2 size={12} className="spin" /> : <Globe2 size={12} />}
-              <span title={tab.url === 'about:blank' ? '新标签页' : tab.url}>
-                {tab.title || '新标签页'}
-              </span>
-              <ActionButton
-                className="tab-close"
-                aria-label={`关闭标签 ${tab.title || '新标签页'}`}
-                isDisabled={tabBusy}
-                onPress={() => void changeTab('browser:close-tab', tab.id)}
-              >
-                <X size={12} />
-              </ActionButton>
-            </Tabs.Tab>
-          ))}
-        </Tabs.List>
-        <ActionButton
-          className="icon-button new-tab-button"
-          aria-label="新建标签页"
-          title="新建标签页 ⌘T"
-          isDisabled={!ready || tabBusy}
-          onPress={() => void newTab()}
-        >
-          <Plus size={15} />
-        </ActionButton>
-      </Tabs>
       <div className="browser-navigation">
         <div className="nav-buttons">
           <ActionButton
@@ -561,7 +577,7 @@ export function BrowserPane({
             isDisabled={!ready || !state.canGoBack}
             onPress={() => void onAction('browser:back')}
           >
-            <ArrowLeft size={16} />
+            {({ isHovered, isDisabled }) => <NavigationArrow hovered={isHovered && !isDisabled} />}
           </ActionButton>
           <ActionButton
             className="icon-button"
@@ -570,7 +586,9 @@ export function BrowserPane({
             isDisabled={!ready || !state.canGoForward}
             onPress={() => void onAction('browser:forward')}
           >
-            <ArrowRight size={16} />
+            {({ isHovered, isDisabled }) => (
+              <NavigationArrow forward hovered={isHovered && !isDisabled} />
+            )}
           </ActionButton>
           <ActionButton
             className="icon-button"
@@ -579,11 +597,17 @@ export function BrowserPane({
             isDisabled={!ready}
             onPress={() => void onAction('browser:reload')}
           >
-            <RefreshCw size={15} className={busy ? 'spin' : ''} />
+            {({ isHovered, isDisabled }) =>
+              busy ? (
+                <Icon icon={RefreshCwIcon} aria-hidden size={15} className="spin" />
+              ) : (
+                <TurnIcon kind="refresh" size={15} hovered={isHovered && !isDisabled} />
+              )
+            }
           </ActionButton>
         </div>
         <form className="address-field" onSubmit={(event) => void navigate(event)}>
-          <Globe2 size={13} />
+          <Icon icon={EarthIcon} size={13} />
           <Input
             ref={address}
             aria-label="网页地址"
@@ -599,7 +623,7 @@ export function BrowserPane({
             type="submit"
             isDisabled={!ready || tabBusy}
           >
-            <ArrowUpRight size={14} />
+            <Icon icon={ArrowUpRight01Icon} size={14} />
           </ActionButton>
         </form>
       </div>
@@ -629,10 +653,11 @@ export function BrowserPane({
               onToggleInspector();
             }}
           >
-            <SlidersHorizontal size={15} />
+            <Icon icon={SlidersHorizontalIcon} size={15} />
           </ActionButton>
           <ActionButton
             className={`subtle-button ${state.inspecting ? 'selected' : ''}`}
+            aria-pressed={state.inspecting}
             isDisabled={!ready}
             onPress={() => {
               setMode('page');
@@ -644,7 +669,7 @@ export function BrowserPane({
               );
             }}
           >
-            <MousePointer2 size={14} />
+            <Icon icon={Cursor01Icon} size={14} />
             选取元素
           </ActionButton>
           <ActionButton
@@ -652,7 +677,11 @@ export function BrowserPane({
             isDisabled={!ready}
             onPress={() => void toggleRecord()}
           >
-            {state.recording ? <Square size={11} fill="currentColor" /> : <Circle size={12} />}
+            {state.recording ? (
+              <Icon icon={StopIcon} size={11} fill="currentColor" />
+            ) : (
+              <Icon icon={CircleIcon} size={12} />
+            )}
             <span>{share?.active ? '结束共享' : state.recording ? '结束录制' : '录制'}</span>
           </ActionButton>
         </div>
@@ -661,14 +690,14 @@ export function BrowserPane({
         <div className="browser-canvas-wrap">
           {state.inspecting && (
             <div className="inspect-tip">
-              <MousePointer2 size={13} />
+              <Icon icon={Cursor01Icon} size={13} />
               悬停预览，点击选中
               <kbd>Esc 取消</kbd>
               <ActionButton
                 aria-label="取消选取"
                 onPress={() => void onAction('browser:inspect', { enabled: false })}
               >
-                <X size={13} />
+                <Icon icon={XIcon} size={13} />
               </ActionButton>
             </div>
           )}
@@ -739,7 +768,7 @@ export function BrowserPane({
                   </>
                 ) : (
                   <>
-                    <Loader2 size={19} className="spin" />
+                    <Icon icon={Loading02Icon} size={19} className="spin" />
                     <span>正在显示页面</span>
                   </>
                 )}
@@ -788,9 +817,9 @@ export function BrowserPane({
               <div className="browser-unavailable">
                 <div className="browser-unavailable-icon">
                   {state.status === 'starting' ? (
-                    <Loader2 size={28} className="spin" />
+                    <Icon icon={Loading02Icon} size={28} className="spin" />
                   ) : (
-                    <Globe2 size={28} />
+                    <Icon icon={EarthIcon} size={28} />
                   )}
                 </div>
                 <h3>
@@ -875,7 +904,7 @@ export function BrowserPane({
         <div className="recordings-view">
           {!recording ? (
             <div className="recording-empty">
-              <Circle size={30} strokeWidth={1.2} />
+              <Icon icon={CircleIcon} size={30} strokeWidth={1.2} />
               <h3>保留操作发生的过程</h3>
               <p>点击录制，完成一段网页操作。结束后可以交给 Agent 理解和整理。</p>
               <ActionButton
@@ -883,7 +912,7 @@ export function BrowserPane({
                 isDisabled={!ready}
                 onPress={() => void toggleRecord()}
               >
-                <Circle size={13} />
+                <Icon icon={CircleIcon} size={13} />
                 开始录制
               </ActionButton>
             </div>
@@ -907,12 +936,11 @@ export function BrowserPane({
                   aria-label="导出操作记录"
                   onPress={() => void onAction('recording:export', { id: recording.id })}
                 >
-                  <Download size={16} />
+                  <Icon icon={Download01Icon} size={16} />
                 </ActionButton>
               </div>
               {recordings.length > 1 && (
                 <ChoiceSelect
-                  className="viewport-select"
                   triggerClassName="recording-select"
                   label="选择操作记录"
                   value={recording.id}
@@ -940,7 +968,7 @@ export function BrowserPane({
                             : ''}
                       </span>
                     </div>
-                    <Check size={13} className="step-check" />
+                    <Icon icon={Tick02Icon} size={13} className="step-check" />
                   </li>
                 ))}
               </ol>
@@ -953,7 +981,7 @@ export function BrowserPane({
                   isDisabled={!recording.steps.length}
                   onPress={() => onAnalyze(recording.id)}
                 >
-                  <Play size={14} />让 Agent 理解这段操作
+                  <Icon icon={PlayIcon} size={14} />让 Agent 理解这段操作
                 </ActionButton>
                 <p>
                   {recording.summary

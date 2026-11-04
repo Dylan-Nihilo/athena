@@ -1,7 +1,8 @@
+import { NavigationArrow, TurnIcon } from './HoverIcons';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Input } from '@heroui/react';
-import { ArrowLeft, ArrowRight, MousePointer2, RefreshCw, Users } from 'lucide-react';
-import { ActionButton } from './ui';
+import { Cursor01Icon, UsersIcon } from '@hugeicons-pro/core-stroke-rounded';
+import { ActionButton, Icon } from './ui';
 import { ElementInspector } from './ElementInspector';
 import { SharedSurface } from './SharedSurface';
 import { ShareConnection } from './share-connection';
@@ -140,7 +141,7 @@ export default function SharedPage() {
             join();
           }}
         >
-          <Users size={28} />
+          <Icon icon={UsersIcon} size={28} />
           <h1>一起浏览，一起修改</h1>
           <p>主持人确认后，你将看到同一个网页。操作会按参与者记录。</p>
           <label htmlFor="guest-name">你的称呼</label>
@@ -159,7 +160,7 @@ export default function SharedPage() {
         </form>
       ) : !approved && !ended ? (
         <section className="share-waiting">
-          <Users size={28} />
+          <Icon icon={UsersIcon} size={28} />
           <h1>{error ? '暂时无法加入' : '等待主持人确认'}</h1>
           <p>{error || `${name}，请告知主持人你的称呼与身份编号。`}</p>
           {connection.participantId && <code>身份 {connection.participantId.slice(0, 8)}</code>}
@@ -185,7 +186,7 @@ export default function SharedPage() {
           </section>
           <div className="shared-toolbar">
             <div className="shared-presence">
-              <Users size={15} />
+              <Icon icon={UsersIcon} size={15} />
               <span>
                 {state?.participants
                   .map((p) => `${p.name}${p.status === 'disconnected' ? '（断开）' : ''}`)
@@ -193,7 +194,7 @@ export default function SharedPage() {
               </span>
             </div>
             <span className="shared-controller" role="status">
-              <MousePointer2 size={15} />
+              <Icon icon={Cursor01Icon} size={15} />
               {ended
                 ? '本次共享已结束'
                 : state?.changingControl
@@ -264,25 +265,34 @@ export default function SharedPage() {
                 }}
               >
                 <ActionButton
+                  isIconOnly
                   aria-label="后退"
                   isDisabled={!controlling || !browser?.canGoBack}
                   onPress={() => void action('browser:back')}
                 >
-                  <ArrowLeft size={16} />
+                  {({ isHovered, isDisabled }) => (
+                    <NavigationArrow hovered={isHovered && !isDisabled} />
+                  )}
                 </ActionButton>
                 <ActionButton
+                  isIconOnly
                   aria-label="前进"
                   isDisabled={!controlling || !browser?.canGoForward}
                   onPress={() => void action('browser:forward')}
                 >
-                  <ArrowRight size={16} />
+                  {({ isHovered, isDisabled }) => (
+                    <NavigationArrow forward hovered={isHovered && !isDisabled} />
+                  )}
                 </ActionButton>
                 <ActionButton
+                  isIconOnly
                   aria-label="刷新"
                   isDisabled={!controlling}
                   onPress={() => void action('browser:reload')}
                 >
-                  <RefreshCw size={15} />
+                  {({ isHovered, isDisabled }) => (
+                    <TurnIcon kind="refresh" size={15} hovered={isHovered && !isDisabled} />
+                  )}
                 </ActionButton>
                 <Input
                   aria-label="共享网页地址"
@@ -300,62 +310,64 @@ export default function SharedPage() {
                     void action('browser:inspect', { enabled: true });
                   }}
                 >
-                  <MousePointer2 size={15} />
+                  <Icon icon={Cursor01Icon} size={15} />
                   选择元素
                 </ActionButton>
                 <ActionButton isDisabled={!controlling} onPress={() => setInspector((v) => !v)}>
                   修改元素
                 </ActionButton>
               </form>
-              <div className="shared-workspace">
-                <SharedSurface
-                  connection={connection}
-                  frameSource={frameSource}
-                  enabled={controlling}
-                  onError={setError}
-                />
-                {inspector && controlling && (
-                  <aside className="shared-inspector">
-                    <ElementInspector
-                      actorId={me?.id}
-                      selected={browser?.selectedElement}
-                      tabId={browser?.activeTabId}
-                      previews={(browser?.previewEdits || []).filter(
-                        (p) => !p.actor || p.actor.id === me?.id,
-                      )}
-                      controlSurface={browser?.elementControls}
-                      onAction={action}
-                      onClose={() => setInspector(false)}
-                    />
-                  </aside>
-                )}
+              <div className="shared-page-content">
+                <div className="shared-workspace">
+                  <SharedSurface
+                    connection={connection}
+                    frameSource={frameSource}
+                    enabled={controlling}
+                    onError={setError}
+                  />
+                  {inspector && controlling && (
+                    <aside className="shared-inspector">
+                      <ElementInspector
+                        actorId={me?.id}
+                        selected={browser?.selectedElement}
+                        tabId={browser?.activeTabId}
+                        previews={(browser?.previewEdits || []).filter(
+                          (p) => !p.actor || p.actor.id === me?.id,
+                        )}
+                        controlSurface={browser?.elementControls}
+                        onAction={action}
+                        onClose={() => setInspector(false)}
+                      />
+                    </aside>
+                  )}
+                </div>
+                <section className="shared-recent-activity" aria-label="最近操作">
+                  <h2>最近操作</h2>
+                  {steps.length ? (
+                    <ol>
+                      {steps
+                        .slice(-3)
+                        .reverse()
+                        .map((step) => (
+                          <li key={step.id}>
+                            <span>
+                              {step.actor?.name || (step.source === 'agent' ? 'Agent' : '参与者')} ·{' '}
+                              {step.description}
+                            </span>
+                            <time>
+                              {new Date(step.timestamp).toLocaleTimeString('zh-CN', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </time>
+                          </li>
+                        ))}
+                    </ol>
+                  ) : (
+                    <p>还没有页面操作。</p>
+                  )}
+                </section>
               </div>
-              <section className="shared-recent-activity" aria-label="最近操作">
-                <h2>最近操作</h2>
-                {steps.length ? (
-                  <ol>
-                    {steps
-                      .slice(-3)
-                      .reverse()
-                      .map((step) => (
-                        <li key={step.id}>
-                          <span>
-                            {step.actor?.name || (step.source === 'agent' ? 'Agent' : '参与者')} ·{' '}
-                            {step.description}
-                          </span>
-                          <time>
-                            {new Date(step.timestamp).toLocaleTimeString('zh-CN', {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })}
-                          </time>
-                        </li>
-                      ))}
-                  </ol>
-                ) : (
-                  <p>还没有页面操作。</p>
-                )}
-              </section>
             </>
           )}
         </>

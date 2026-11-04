@@ -1,7 +1,14 @@
 import { useMemo, useState } from 'react';
 import { Button } from '@heroui/react';
 import { Command } from '@heroui-pro/react';
-import { Folder, Loader2, MessageSquare, Search, X } from 'lucide-react';
+import {
+  Folder01Icon,
+  Loading02Icon,
+  MessageSquareIcon,
+  Search01Icon,
+  XIcon,
+} from '@hugeicons-pro/core-stroke-rounded';
+import { Icon } from './ui';
 import type { Conversation } from '../shared/types';
 
 export function ConversationSearch({
@@ -74,7 +81,7 @@ export function ConversationSearch({
             <Command.Header className="conversation-search-heading">
               <h2>搜索对话</h2>
               <Button isIconOnly variant="ghost" size="sm" aria-label="关闭搜索" onPress={close}>
-                <X size={18} />
+                <Icon icon={XIcon} size={18} />
               </Button>
             </Command.Header>
             <Command.InputGroup
@@ -82,7 +89,7 @@ export function ConversationSearch({
               className="conversation-search-field"
             >
               <Command.InputGroup.Prefix>
-                <Search size={16} />
+                <Icon icon={Search01Icon} size={16} />
               </Command.InputGroup.Prefix>
               <Command.InputGroup.Input
                 autoFocus
@@ -117,7 +124,7 @@ export function ConversationSearch({
                   <p>{query.trim() ? '没有找到相关对话' : '还没有对话'}</p>
                 ) : (
                   <span role="status">
-                    <Loader2 size={16} className="spin" />
+                    <Icon icon={Loading02Icon} size={16} className="spin" />
                     正在读取对话…
                   </span>
                 )
@@ -129,7 +136,7 @@ export function ConversationSearch({
                   key={conversation.id}
                   textValue={conversation.title}
                 >
-                  <MessageSquare size={16} />
+                  <Icon icon={MessageSquareIcon} size={16} />
                   <div className="conversation-search-copy">
                     <strong>{conversation.title}</strong>
                     <span>{preview}</span>
@@ -152,7 +159,7 @@ export function ConversationSearch({
             )}
             <Command.Footer className="conversation-search-footer">
               <span title={workspace}>
-                <Folder size={14} />
+                <Icon icon={Folder01Icon} size={14} />
                 {workspace.split(/[\\/]/).filter(Boolean).pop() || '本机工作区'}
               </span>
               <span>↑ ↓ 选择　 Enter 打开　 Esc 关闭</span>

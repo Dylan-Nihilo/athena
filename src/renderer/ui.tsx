@@ -1,5 +1,10 @@
 import { Button, Tooltip } from '@heroui/react';
+import { HugeiconsIcon, type HugeiconsIconProps } from '@hugeicons/react';
 import type { ComponentProps } from 'react';
+
+export function Icon(props: HugeiconsIconProps) {
+  return <HugeiconsIcon aria-hidden strokeWidth={1.7} {...props} />;
+}
 
 /** Keeps toolbar sizing and accessible tooltips consistent across the workspace. */
 export function ActionButton({
@@ -29,7 +34,7 @@ export function ActionButton({
   );
   const label = title || (iconOnly ? props['aria-label'] : undefined);
   return label ? (
-    <Tooltip delay={500}>
+    <Tooltip delay={500} closeDelay={0}>
       {button}
       <Tooltip.Content>{label}</Tooltip.Content>
     </Tooltip>

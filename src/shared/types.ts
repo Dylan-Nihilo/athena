@@ -10,6 +10,14 @@ export interface AgentInfo {
   authentication?: 'ready' | 'missing' | 'unknown';
   detail?: string;
 }
+export type CodexUpdateStatus =
+  | { status: 'unknown' }
+  | {
+      status: 'available' | 'current';
+      installedVersion: string;
+      latestVersion: string;
+      releaseUrl: string;
+    };
 export interface ElementRef {
   ref: string;
   tabId?: string;

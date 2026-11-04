@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Link2, Unlink2 } from 'lucide-react';
+import { HugeiconsIcon } from '@hugeicons/react';
+import { Link02Icon, Unlink02Icon } from '@hugeicons-pro/core-stroke-rounded';
 import { PropertyField } from './fields';
 import { NumericEntry } from './NumericEntry';
 import { NumberControl } from './NumberControl';
@@ -44,7 +45,7 @@ export function InsetsControl({
       aria-pressed={split}
       onClick={() => setSplitMode(!split)}
     >
-      {split ? <Unlink2 size={13} /> : <Link2 size={13} />}
+      <HugeiconsIcon icon={split ? Unlink02Icon : Link02Icon} size={13} aria-hidden />
     </button>
   );
   if (!split || !sides)

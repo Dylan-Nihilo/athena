@@ -127,13 +127,22 @@ try {
   await models.click();
   await page.getByRole('option', { name: '全部模型', exact: true }).click();
   await expect(estimate).toHaveText('$11.76');
-  await page.getByRole('tab', { name: '日期', exact: true }).click();
+  await page.getByRole('button', { name: '查看每日数据', exact: true }).press('Enter');
   await expect(page.getByRole('table', { name: '按日期汇总用量' })).toContainText('$11.76');
+  await expect(page.getByRole('heading', { name: '明细', exact: true })).toBeFocused();
+  assert.equal(await page.evaluate(() => window.scrollY), 0);
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('tab', { name: '日期', exact: true })).toBeFocused();
   checks.push(
     'Custom model filter and date grouping recalculate currency; keyboard dismissal restores focus',
   );
 
-  await page.getByRole('button', { name: '估算依据与单价', exact: true }).click();
+  // The padded edge of the visible heading must activate the same disclosure.
+  await page.locator('.usage-pricing-details').click({ position: { x: 16, y: 4 } });
+  await expect(page.getByRole('button', { name: '估算依据与单价', exact: true })).toHaveAttribute(
+    'aria-expanded',
+    'true',
+  );
   await expect(page.getByText('单价：USD / 百万 Token')).toBeVisible();
   await expect(
     page.locator('.usage-price-table').getByText('2026-11-01', { exact: true }),

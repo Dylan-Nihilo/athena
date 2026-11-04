@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Button, Card } from '@heroui/react';
 import { LayoutGroup, motion, useReducedMotion } from 'motion/react';
-import { ArrowDown, Loader2 } from 'lucide-react';
+import { ArrowDown02Icon, Loading02Icon } from '@hugeicons-pro/core-stroke-rounded';
+import { Icon } from './ui';
 import athenaLogo from './assets/brand/athena-profile.png';
 import downloadIcon from './assets/onboarding/download.svg';
 import infoIcon from './assets/onboarding/info.svg';
@@ -1054,7 +1055,11 @@ export function Onboarding({
                             <Card.Content className="onboarding-status-row">
                               <span className="onboarding-status-icon">
                                 {card.icon === 'pending' ? (
-                                  <Loader2 size={22} className={active ? 'spin' : undefined} />
+                                  <Icon
+                                    icon={Loading02Icon}
+                                    size={22}
+                                    className={active ? 'spin' : undefined}
+                                  />
                                 ) : (
                                   <img src={icons[card.icon]} alt="" />
                                 )}
@@ -1131,7 +1136,7 @@ export function Onboarding({
       <div ref={fade} className="onboarding-history-fade" aria-hidden="true" />
       {showLatest && (
         <Button className="onboarding-jump-latest" variant="secondary" onPress={goLatest}>
-          <ArrowDown size={16} />
+          <Icon icon={ArrowDown02Icon} size={16} />
           回到最新
         </Button>
       )}

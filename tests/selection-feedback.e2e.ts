@@ -168,7 +168,10 @@ try {
   await page.getByRole('button', { name: '选取元素', exact: true }).click();
   await page.keyboard.press('Escape');
   await expect.poll(async () => (await snapshot()).browser.inspecting).toBe(false);
-  for (const hideControl of ['.browser-toggle', '.browser-heading button']) {
+  for (const hideControl of [
+    '.browser-toggle',
+    '.browser-heading button[aria-label="收起浏览器"]',
+  ]) {
     await page.getByRole('button', { name: '选取元素', exact: true }).click();
     await page.locator(hideControl).click();
     await expect(page.locator('.browser-drawer')).toHaveAttribute('aria-hidden', 'true');

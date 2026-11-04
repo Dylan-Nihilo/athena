@@ -1,6 +1,6 @@
 {
   "name": "athena",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "private": true,
   "license": "UNLICENSED",
   "author": "Dylan",
@@ -40,7 +40,8 @@
       "resources/**/*",
       "THIRD_PARTY_NOTICES.md",
       "package.json",
-      "!node_modules/@heroui-pro{,/**/*}"
+      "!node_modules/@heroui-pro{,/**/*}",
+      "!node_modules/@hugeicons-pro{,/**/*}"
     ],
     "mac": {
       "icon": "resources/athena-icon.icns",
@@ -62,8 +63,9 @@
     "@heroui-pro/react": "1.0.0-beta.10",
     "@heroui/react": "3.2.7",
     "@heroui/styles": "3.2.7",
+    "@hugeicons-pro/core-stroke-rounded": "4.4.0",
+    "@hugeicons/react": "1.1.10",
     "@larksuiteoapi/node-sdk": "^1.76.0",
-    "lucide-react": "^1.64.0",
     "motion": "14.9.0",
     "qrcode": "^1.5.4",
     "react": "^19.3.1",
@@ -71,6 +73,8 @@
     "react-dom": "^19.3.1",
     "react-markdown": "^10.1.0",
     "react-resizable-panels": "4.15.3",
+    "remark-gfm": "4.0.1",
+    "shiki": "^4.6.0",
     "tailwind-merge": "3.5.0",
     "ws": "^8.22.0",
     "zod": "3.25.76"

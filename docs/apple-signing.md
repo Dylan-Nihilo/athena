@@ -10,7 +10,7 @@
 
 ## 前提
 
-- 安装依赖并完成已有 HeroUI Pro 授权恢复：`npm ci`、`npm run heroui:setup`。
+- 按[开发环境说明](user-guide.md#开发环境与验证)配置 HugeIcons Pro 安装凭据，运行 `npm ci` 并完成 HeroUI Pro 授权恢复。
 - 安装 Xcode Command Line Tools，确保 `xcrun --find notarytool` 可用。
 - 登录钥匙串内有有效的 **Developer ID Application** 证书及其私钥。检查：
 

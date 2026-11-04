@@ -79,19 +79,23 @@ const waitResult = async (id: string) => {
 };
 const selectModel = async (model: ModelOption) => {
   await page.getByRole('button', { name: '选择模型', exact: true }).click();
-  const select = page.locator('button[data-choice-label="模型"]');
-  await expect(select).toBeEnabled({ timeout: 15000 });
-  await chooseOption(page, '模型', model.name);
+  const option = page.getByRole('option', { name: model.name, exact: true });
+  await expect(option).toBeEnabled({ timeout: 15000 });
+  await option.click();
   await expect
     .poll(async () => (await snapshot()).settings.modelSelection?.model)
     .toBe(model.model);
   const effort = page.getByRole('slider', { name: '推理强度' });
   if (model.efforts.some((e) => e.id === 'low')) {
-    await expect(effort).toBeEnabled();
-    await effort.press('Home');
-    for (let i = 0; i < model.efforts.findIndex((e) => e.id === 'low'); i++) {
+    if (model.efforts.length > 1) {
       await expect(effort).toBeEnabled();
-      await effort.press('ArrowRight');
+      await effort.press('Home');
+      for (let i = 0; i < model.efforts.findIndex((e) => e.id === 'low'); i++) {
+        await expect(effort).toBeEnabled();
+        await effort.press('ArrowRight');
+      }
+    } else if ((await snapshot()).settings.modelSelection?.effort !== 'low') {
+      await page.getByRole('button', { name: '使用轻快', exact: true }).click();
     }
     await expect.poll(async () => (await snapshot()).settings.modelSelection?.effort).toBe('low');
   }
@@ -130,7 +134,7 @@ try {
   );
   await takeScreenshot('human-help');
   await page.getByRole('button', { name: '选择模型', exact: true }).click();
-  await expect(page.locator('button[data-choice-label="模型"]')).toBeDisabled();
+  await expect(page.getByRole('option', { name: second.name, exact: true })).toBeDisabled();
   await page.keyboard.press('Escape');
   await assert.rejects(() => invoke('settings:model', { model: second.model }), /当前任务结束/);
   await page.getByRole('button', { name: '已完成，继续', exact: true }).click();
@@ -174,7 +178,10 @@ try {
     /内容已变化/,
   );
   await writeFile(artifact.path, content);
-  const rows = page.getByRole('grid', { name: '工具动作' }).last().getByRole('row');
+  const rows = page
+    .getByRole('group', { name: '工具动作' })
+    .last()
+    .getByRole('button', { expanded: false });
   await rows.first().focus();
   await page.keyboard.press('Enter');
   await expect(page.getByRole('button', { name: '收起详情' })).toBeVisible();

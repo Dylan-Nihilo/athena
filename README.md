@@ -59,7 +59,7 @@
 
 </details>
 
-**当前版本：[0.7.0](https://github.com/Dylan-Nihilo/athena/releases/tag/v0.7.0)** · [ZIP 归档](https://github.com/Dylan-Nihilo/athena/releases/download/v0.7.0/Athena-0.7.0-mac-arm64.zip) · [SHA-256 校验](https://github.com/Dylan-Nihilo/athena/releases/download/v0.7.0/SHA256SUMS.txt) · [全部版本](https://github.com/Dylan-Nihilo/athena/releases)
+**公开下载版本：[0.7.0](https://github.com/Dylan-Nihilo/athena/releases/tag/v0.7.0)** · [ZIP 归档](https://github.com/Dylan-Nihilo/athena/releases/download/v0.7.0/Athena-0.7.0-mac-arm64.zip) · [SHA-256 校验](https://github.com/Dylan-Nihilo/athena/releases/download/v0.7.0/SHA256SUMS.txt) · [全部版本](https://github.com/Dylan-Nihilo/athena/releases)
 
 > 当前 macOS Apple Silicon 安装包已完成 Developer ID 正式签名和 Apple 公证，尚无自动更新。安装包不包含用户登录或 BrowserOS neo；引导会按需准备运行组件。
 
@@ -84,7 +84,7 @@
 <details>
 <summary><strong>从源码开发</strong></summary>
 
-需要 Node.js **22.12+**、npm，以及有效的 HeroUI Pro 构建授权。
+需要 Node.js **22.12+**、npm 和 HeroUI Pro 构建授权。运行 `npm ci` 前，将 CollectUI 分发的 HugeIcons Pro npm key 注入环境变量 `HUGEICONS_NPM_TOKEN`。项目的 `.npmrc` 仅将 `@hugeicons-pro` 指向 CollectUI 私服，`@hugeicons/react` 渲染器从公共 npm 安装。
 
 ```bash
 npm ci

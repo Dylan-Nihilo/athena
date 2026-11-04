@@ -15,7 +15,8 @@ await mkdir(output, { recursive: true });
 const entry = `
 import React,{useState} from 'react';
 import {createRoot} from 'react-dom/client';
-import {Search} from 'lucide-react';
+import {HugeiconsIcon} from '@hugeicons/react';
+import {Search01Icon} from '@hugeicons-pro/core-stroke-rounded';
 import {ChoiceSelect} from '/src/renderer/ChoiceSelect.tsx';
 import {ElementInspector} from '/src/renderer/ElementInspector.tsx';
 import {InspectorSelect,InspectorInput} from '/packages/element-inspector/src';
@@ -28,11 +29,11 @@ function Fixture(){
  return React.createElement('main',{className:'select-layout-fixture'},
   React.createElement('section',{className:'compact-choice'},
    React.createElement('h2',null,'查找方式'),
-   React.createElement('div',{className:'fixture-row'},React.createElement(Search,{size:13}),
+   React.createElement('div',{className:'fixture-row'},React.createElement(HugeiconsIcon,{icon:Search01Icon,size:13,'aria-hidden':true}),
     React.createElement(ChoiceSelect,{label:'通用查找方式',value:choice,onChange:setChoice,options}))),
-  React.createElement('section',{className:'compact-package'},
+  React.createElement('section',{className:'compact-package element-inspector'},
    React.createElement('h2',null,'查找页面'),
-   React.createElement('div',{className:'element-search'},React.createElement(Search,{size:13}),
+   React.createElement('div',{className:'element-search'},React.createElement(HugeiconsIcon,{icon:Search01Icon,size:13,'aria-hidden':true}),
     React.createElement(InspectorSelect,{label:'组件查找方式',value:inspector,onChange:setInspector,options}),
     React.createElement(InspectorInput,{placeholder:'查找文字、标题或按钮'}))),
   React.createElement('section',{className:'actual-inspector'},

@@ -1,16 +1,17 @@
 import { useState, type CSSProperties } from 'react';
 import { createRoot } from 'react-dom/client';
+import { HugeiconsIcon } from '@hugeicons/react';
 import {
-  AlignCenter,
-  AlignJustify,
-  AlignLeft,
-  AlignRight,
-  Blend,
-  Frame,
-  RotateCcw,
-  ScanLine,
-  Type,
-} from 'lucide-react';
+  BlendIcon,
+  FrameIcon,
+  RotateLeft01Icon,
+  ScanIcon,
+  TextAlignCenterIcon,
+  TextAlignJustifyCenterIcon,
+  TextAlignLeftIcon,
+  TextAlignRightIcon,
+  TextFontIcon,
+} from '@hugeicons-pro/core-stroke-rounded';
 import {
   BorderStyleSample,
   ChoiceControl,
@@ -33,10 +34,22 @@ const initial = {
   borderStyle: 'solid',
 };
 const alignments = [
-  { value: 'left', label: '左对齐', icon: <AlignLeft /> },
-  { value: 'center', label: '居中', icon: <AlignCenter /> },
-  { value: 'right', label: '右对齐', icon: <AlignRight /> },
-  { value: 'justify', label: '两端对齐', icon: <AlignJustify /> },
+  { value: 'left', label: '左对齐', icon: <HugeiconsIcon icon={TextAlignLeftIcon} aria-hidden /> },
+  {
+    value: 'center',
+    label: '居中',
+    icon: <HugeiconsIcon icon={TextAlignCenterIcon} aria-hidden />,
+  },
+  {
+    value: 'right',
+    label: '右对齐',
+    icon: <HugeiconsIcon icon={TextAlignRightIcon} aria-hidden />,
+  },
+  {
+    value: 'justify',
+    label: '两端对齐',
+    icon: <HugeiconsIcon icon={TextAlignJustifyCenterIcon} aria-hidden />,
+  },
 ];
 function Preview() {
   const [style, setStyle] = useState(initial);
@@ -47,7 +60,7 @@ function Preview() {
   return (
     <main className="specimen">
       <header className="specimen-header">
-        <ScanLine aria-hidden />
+        <HugeiconsIcon icon={ScanIcon} aria-hidden />
         <span>Athena</span>
         <i aria-hidden>/</i>
         <h1>元素控件</h1>
@@ -58,7 +71,7 @@ function Preview() {
             reset((v) => v + 1);
           }}
         >
-          <RotateCcw size={13} />
+          <HugeiconsIcon icon={RotateLeft01Icon} size={13} aria-hidden />
           恢复默认
         </button>
       </header>
@@ -98,7 +111,7 @@ function Preview() {
           </div>
         </section>
         <aside key={revision} className="specimen-controls" aria-label="调整元素">
-          <PropertySection label="外观" icon={<Blend />}>
+          <PropertySection label="外观" icon={<HugeiconsIcon icon={BlendIcon} aria-hidden />}>
             <ColorControl
               label="背景颜色"
               value={style.backgroundColor}
@@ -141,7 +154,7 @@ function Preview() {
               onChange={(v) => update('borderStyle', v)}
             />
           </PropertySection>
-          <PropertySection label="排版" icon={<Type />}>
+          <PropertySection label="排版" icon={<HugeiconsIcon icon={TextFontIcon} aria-hidden />}>
             <ColorControl
               label="文字颜色"
               value={style.color}
@@ -176,7 +189,7 @@ function Preview() {
               onChange={(v) => update('textAlign', v as CSSProperties['textAlign'])}
             />
           </PropertySection>
-          <PropertySection label="布局与间距" icon={<Frame />}>
+          <PropertySection label="布局与间距" icon={<HugeiconsIcon icon={FrameIcon} aria-hidden />}>
             <InsetsControl
               label="内边距"
               value={style.padding}

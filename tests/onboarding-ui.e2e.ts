@@ -71,6 +71,12 @@ window.workbench={async invoke(command,payload){
  if(command==='onboarding:complete')return fixture.begin('detect','正在核对最终准备状态',{stage:'ready'});
  if(command==='onboarding:defer')return fixture.update({operation:undefined,login:undefined,status:fixture.mode==='legacy'?'legacy':'deferred'});
  if(command==='browser:element-details')return structuredClone(fixture.element);
+ if(command==='conversation:new'){
+  const conversation={id:'new-'+fixture.calls.length,title:'新对话',workspace:fixture.snapshot.settings.workspace,updatedAt:Date.now(),messages:[]};
+  fixture.snapshot.conversations.unshift(conversation);
+  fixture.emit({type:'conversation:updated',conversation:structuredClone(conversation)});
+  return conversation;
+ }
  if(command==='conversation:send')return {conversationId:payload.id||'submitted-in-new-project'};
  if(command==='models:list')return [];
  if(command==='conversation:prepare')return {status:'ready',conversationId:payload.conversationId};
@@ -142,13 +148,14 @@ const browser = await chromium.launch({
 const errors: string[] = [];
 const checks: string[] = [];
 let activePage: Page | undefined;
-const createPage = async (mode = 'fresh') => {
+const createPage = async (mode = 'fresh', dark = false) => {
   const page = await browser.newPage({
     viewport: { width: 1600, height: 1000 },
     reducedMotion: 'reduce',
   });
   activePage = page;
   await page.addInitScript('window.__name = value => value;');
+  if (dark) await page.addInitScript(() => localStorage.setItem('athena.appearance', 'dark'));
   page.on('pageerror', (error) => errors.push(error.message));
   page.setDefaultTimeout(8000);
   await page.goto(`http://127.0.0.1:${port}/?mode=${mode}`);
@@ -388,7 +395,7 @@ try {
     .poll(() =>
       page.locator('.browser-drawer').evaluate((node) => node.getBoundingClientRect().width),
     )
-    .toBe(458);
+    .toBe(390);
   await page.keyboard.press('Meta+b');
   await expect
     .poll(() =>
@@ -399,20 +406,21 @@ try {
     .poll(() =>
       page.locator('.browser-drawer').evaluate((node) => node.getBoundingClientRect().width),
     )
-    .toBe(620);
+    .toBe(512);
   await page.keyboard.press('Meta+b');
   await expect
     .poll(() =>
       page.locator('.browser-drawer').evaluate((node) => node.getBoundingClientRect().width),
     )
-    .toBe(458);
+    .toBe(390);
   checks.push(
     'One Start click waits for the matching asynchronous complete event, then enters the workbench and refreshes actual directory/agent state without creating or sending a conversation; the newly mounted panel ResizeObserver tracks 1024px viewport and sidebar changes',
   );
   await page.close();
 
-  const skip = await createPage();
+  const skip = await createPage('fresh', true);
   await skip.evaluate(() => (window as any).__onboardingFixture.release());
+  await expect(skip.locator('html')).toHaveAttribute('data-theme', 'dark');
   await skip.getByRole('button', { name: '你好，Athena', exact: true }).click();
   await skip.getByRole('button', { name: '检查本机 Codex', exact: true }).click();
   await update(skip, {
@@ -602,14 +610,31 @@ try {
   await expect(transfer.locator('.element-workspace')).toBeHidden();
   await expect(transfer.locator('.topbar-title')).toContainText('新对话');
   await transferDraft.fill('项目 B 的新任务');
+  const unsent = transfer.getByRole('button', { name: '未发送草稿', exact: true });
+  await expect(unsent).toHaveAttribute('aria-current', 'page');
+  assert.equal((await calls(transfer, 'conversation:new')).length, 0);
+  await transfer.keyboard.press('Meta+n');
+  const savedChat = transfer.locator('.conversation-link').filter({ hasText: '新对话' });
+  await expect(savedChat).toHaveAttribute('aria-current', 'page');
+  await expect(transferDraft).toHaveValue('');
+  await transferDraft.fill('另一段对话的草稿');
+  await unsent.click();
+  await expect(transferDraft).toHaveValue('项目 B 的新任务');
+  await savedChat.click();
+  await expect(transferDraft).toHaveValue('另一段对话的草稿');
+  await unsent.click();
+  await expect(transferDraft).toHaveValue('项目 B 的新任务');
   await transferDraft.press('Enter');
+  await expect(unsent).toHaveCount(0);
   const submitted = (await calls(transfer, 'conversation:send')).at(-1);
   assert.equal(submitted.payload.id, undefined);
+  assert.equal(submitted.payload.text, '项目 B 的新任务');
   assert.equal(submitted.payload.selectedRef, undefined);
   assert.equal(submitted.payload.context, undefined);
-  assert.equal((await calls(transfer, 'conversation:new')).length, 0);
+  assert.equal((await calls(transfer, 'conversation:new')).length, 1);
   checks.push(
     'Unchanged workspace preserves chat draft, selected element and inspector draft; confirmed A-to-B switch clears all temporary source context without inventing a conversation, and the next send contains no A reference',
+    'The first draft in the new workspace stays reachable after creating and switching chats. Sending it without a host ID removes its local sidebar entry.',
   );
   await transfer.close();
 
