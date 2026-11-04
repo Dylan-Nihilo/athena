@@ -167,7 +167,7 @@ npx tsx tests/onboarding.e2e.ts
 
 - 浏览器工作流和本机文件修改已有实现；它们不代表所有网站都兼容。
 - 桌面 Computer Use 仍在调研，未实现通用 Mac 应用控制或隔离桌面控制。
-- 通用 MCP 服务配置/管理、多 Agent 并行调度、更多 CLI 执行器、账户/订阅服务尚未实现。
+- CLI 支持与各自的验收边界见 [本机 CLI 适配](mainstream-cli-support.md)；通用 MCP 服务配置/管理、多 Agent 并行调度、账户/订阅服务尚未实现。
 - 已有内部 Neo MCP 工具链不等于任意第三方 MCP 服务都可接入。
 - 登录、验证码、支付、外部 OAuth 弹窗和其他敏感流程不得从普通网页验收外推。
 - 录制分析尚不提供一键完整 Playwright 测试、PRD 覆盖率报告或后端状态复原。

@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { uiBrowserExecutable } from './ui-browser';
 import { chromium, expect } from '@playwright/test';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
@@ -16,7 +17,8 @@ import {createRoot} from 'react-dom/client';
 import {ModelPicker} from '/src/renderer/ModelPicker.tsx';
 import {ChoiceSelect} from '/src/renderer/ChoiceSelect.tsx';
 import '/src/renderer/styles.css';
-const f=window.__controls={listCalls:[],saves:[],busy:false,failList:false,failSave:false,selection:null,filter:'30'};
+const f=window.__controls={listCalls:[],saves:[],busy:false,failList:false,failSave:false,selection:null,filter:'30',focusChanges:[]};
+document.addEventListener('focusin',event=>{const node=event.target;f.focusChanges.push({tag:node.tagName,type:node.type,role:node.getAttribute('role'),label:node.getAttribute('aria-label')});f.focusChanges=f.focusChanges.slice(-20);});
 f.models=[
  {id:'alpha',model:'alpha',name:'Alpha',description:'',isDefault:true,defaultEffort:'medium',efforts:['low','medium','high'].map(id=>({id,description:''}))},
  {id:'beta',model:'beta',name:'Beta',description:'',isDefault:false,defaultEffort:'high',efforts:['low','medium','high','future-effort'].map(id=>({id,description:''}))},
@@ -29,7 +31,7 @@ window.workbench={async invoke(name,payload){
   await new Promise(resolve=>setTimeout(resolve,40));
   if(f.failSave)throw Error('保存失败，请重试');
   f.saves.push(payload);
-  return {...f.settings,modelSelection:payload};
+  return {...f.settings,modelSelection:{model:payload.model,effort:payload.effort}};
  }
  throw Error('Unexpected '+name);
 }};
@@ -82,9 +84,7 @@ const server = await createServer({
 });
 await server.listen();
 const browser = await chromium.launch({
-  executablePath: path.resolve(
-    '../browseros-runtime/BrowserOS neo.app/Contents/MacOS/BrowserOS neo',
-  ),
+  executablePath: uiBrowserExecutable(),
   headless: true,
   args: [
     '--disable-browseros-server',
@@ -136,6 +136,15 @@ try {
     await expect(slider).toBeFocused();
     await page.keyboard.press('ArrowRight');
     await expect.poll(selected).toEqual({ model: 'beta', effort });
+  }
+  // Saving disables the native range briefly; repeated keyboard edits must retain its focus.
+  for (let index = 0; index < 6; index++) {
+    await slider.press('Home');
+    await expect.poll(selected).toEqual({ model: 'beta', effort: 'low' });
+    await expect(slider).toBeFocused();
+    await slider.press('End');
+    await expect.poll(selected).toEqual({ model: 'beta', effort: 'future-effort' });
+    await expect(slider).toBeFocused();
   }
   await expect(page.locator('.reasoning-heading output')).toHaveText('future-effort');
   await page.screenshot({ path: path.join(output, 'keyboard-focus.png'), animations: 'disabled' });
@@ -224,7 +233,7 @@ try {
     const f = (window as any).__controls;
     f.setSettings({ ...f.settings, modelSelection: undefined });
   });
-  await expect(page.locator('.model-control-status')).toHaveText('使用 Codex 默认配置');
+  await expect(page.locator('.model-control-status')).toHaveText('使用本机 CLI 默认配置');
   await expect(slider).toHaveCount(0);
   await expect(page.getByRole('button', { name: '选择模型', exact: true })).toContainText(
     '默认模型',
@@ -242,7 +251,7 @@ try {
   await page.getByRole('button', { name: '刷新模型', exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => (window as any).__controls.listCalls.at(-1)))
-    .toEqual({ refresh: true });
+    .toEqual({ agent: 'codex', conversationId: undefined, refresh: true });
   await page.evaluate(() => {
     (window as any).__controls.failList = true;
   });
@@ -325,7 +334,23 @@ try {
 } catch (error) {
   await writeFile(
     path.join(output, 'verification.json'),
-    JSON.stringify({ passed: false, checks, errors, error: String(error) }, null, 2),
+    JSON.stringify(
+      {
+        passed: false,
+        checks,
+        errors,
+        error: String(error),
+        focus: await browser
+          .contexts()[0]
+          ?.pages()[0]
+          ?.evaluate(() => ({
+            active: document.activeElement?.outerHTML,
+            changes: (window as any).__controls.focusChanges,
+          })),
+      },
+      null,
+      2,
+    ),
   );
   throw error;
 } finally {

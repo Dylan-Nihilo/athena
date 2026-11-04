@@ -10,16 +10,16 @@
 
 ## 能力与验证矩阵
 
-| CLI          | 当前执行模式                                         | 本轮验证情况                                                                                       |
-| ------------ | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| Codex        | 保留 app-server、本地工具审批与 Neo 浏览器链路       | 既有协议/用量/引导回归；当前本机登录探针为 missing，未重做真实模型调用                             |
-| Pi           | 长驻 RPC；本地工具每次通过 Athena 审批               | 真实模型：临时文件写入/读回、审批、流式、原生会话恢复、用量、实际模型证据、停止通过                |
-| Claude Code  | 原生 stream-json；仅文本任务，关闭本地工具与 MCP     | 真实模型：回复、流式、关闭后原生恢复与停止通过；取得消息模型和用量证据                             |
-| Cursor Agent | 原生 stream-json；Ask 只读模式，不运行写入/命令      | 协议测试通过；真实调用因本机未登录失败，`cursor-agent status` 确认需要登录。没有自动登录或重放任务 |
-| Gemini CLI   | 原生 stream-json；临时 deny 工具策略，不启用原生工具 | 本机未安装，未做真实验证；安装后仍需支持所需受限模式参数，否则不可选                               |
-| OpenCode     | 保留安装检测兼容项                                   | 本轮不接通执行，不可选为任务执行器                                                                 |
+| CLI          | 当前执行模式                                         | 本轮验证情况                                                                                                             |
+| ------------ | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Codex        | 保留 app-server、本地工具审批与 Neo 浏览器链路       | 既有协议/用量/引导回归；当前本机登录探针为 missing，未重做真实模型调用                                                   |
+| Pi           | 长驻 RPC；本地工具每次通过 Athena 审批               | 适配器与真实 Electron UI 均通过：临时文件写入/读回、逐次审批、流式、重启恢复原生会话、用量、实际模型证据、停止并保留草稿 |
+| Claude Code  | 原生 stream-json；仅文本任务，关闭本地工具与 MCP     | 真实模型：回复、流式、关闭后原生恢复与停止通过；取得消息模型和用量证据                                                   |
+| Cursor Agent | 原生 stream-json；Ask 只读模式，不运行写入/命令      | 协议测试通过；真实调用因本机未登录失败，`cursor-agent status` 确认需要登录。没有自动登录或重放任务                       |
+| Gemini CLI   | 原生 stream-json；临时 deny 工具策略，不启用原生工具 | 本机未安装，未做真实验证；安装后仍需支持所需受限模式参数，否则不可选                                                     |
+| OpenCode     | 保留安装检测兼容项                                   | 本轮不接通执行，不可选为任务执行器                                                                                       |
 
-**验证层级不能合并：** 上述 Pi/Claude 的真实结果来自直接调用生产适配器的隔离脚本，不等于 Athena 完整 UI 验收。宿主、选择器、默认设置与引导接线已修改源码；本机缺 HugeIcons Pro 私服授权依赖，`npm ci` 返回 E401，完整项目类型检查、renderer 构建及 UI 实机验收尚未完成。需要在本机用户级 `~/.npmrc` 配置真实 CollectUI 授权并成功 `npm ci` 后继续，占位 Key 不能用于实际安装。未用空模块、替代图标包或伪造声明绕过授权。
+**验证层级不能合并：** Claude 的真实模型结果仍来自直接调用生产适配器的隔离脚本；本轮额外完成 Pi 的真实 Electron UI 验收，不代表其他 CLI 或 Neo 网页链路都已实测。Pro 授权依赖现已恢复，`npm ci`、全项目类型检查及正式 renderer/宿主构建通过，未用空模块、替代图标包或伪造声明绕过授权。用户级 `~/.npmrc` 引用环境变量 `HUGEICONS_NPM_TOKEN`，仓库只保留 registry，不存 Token。安装审计报告 19 项问题（4 high、15 moderate），本轮未自动升级依赖或改动锁文件。
 
 ## 实现边界
 
@@ -43,7 +43,13 @@
 
 ## 验证入口
 
-本轮选定的后端、协议、用量及引导回归共 **187 项通过、0 项失败、0 项跳过**。宿主严格类型检查及宿主打包通过；renderer 仅做了入口语法检查，完整 UI 验收仍受前述私服依赖阻塞。
+- `npm test`：共 **342 项，306 通过、36 条件性跳过、0 失败**。浏览器/Neo 相关跳过项不算已验证。
+- `npm run typecheck`、`npm run build`：全项目通过。
+- 首页、控件、引导及 USD 用量四组隔离 renderer 检查通过。测试可使用已安装的 BrowserOS、Chrome 或 Playwright Chromium，也可显式设置 `WORKBENCH_TEST_BROWSER_EXECUTABLE`；这不验证 Neo 或桌面控制能力。
+- `tests/mainstream-cli-ui.e2e.ts`：真实 Electron，独立应用数据/临时项目，使用用户已安装的 Pi。通过界面逐次批准指定文件 write/read，核对文件、CLI 消息模型证据及用量；重启后以同一原生 ID 续聊并回忆前轮随机标记；真实停止流式任务并保留下一段草稿。验证默认值仅影响新对话、旧无 agent 档案仍属 Codex、已执行对话切换 CLI 创建新会话。Claude 在此脚本仅被选择，不产生其模型调用；浏览器保持稍后准备。
+- 真实 UI 证据写入忽略提交的 `test-results/mainstream-cli-ui/`；隔离 UI 截图不是实机网页操作证据，不替换 README 的正式截图。
+- 控件检查曾偶发一次保存后的键盘焦点断言失败；加入连续 Home/End 切换后连续三次通过，但未锁定根因，不能声称已修复此偶发问题。保留焦点变化与失败现场诊断。
+- 预热关闭夹具改为握手明确挂起后关闭，移除 1 秒完成窗口的竞争；人工请求布局按稳定后的相同尺寸阈值检查，不降低停止、焦点或布局断言。
 
 ```bash
 npx tsx --test tests/pi-session.test.ts tests/pi-permissions.test.ts tests/stream-cli-session.test.ts tests/cli-selection.test.ts
@@ -51,9 +57,11 @@ npx tsx --test tests/pi-session.test.ts tests/pi-permissions.test.ts tests/strea
 # 真实模型调用，需要明确授权；可能计费。
 WORKBENCH_LIVE_PI=1 WORKBENCH_PI_PATH="$(command -v pi)" npm run test:live-pi
 WORKBENCH_LIVE_CLI=claude WORKBENCH_CLI_PATH="$(command -v claude)" npm run test:live-cli
-# Cursor 先由用户在终端登录，再用同一脚本验收；Gemini 先由用户安装。
+# 真实 Electron UI，同样可能计费；先 build，必要时运行 node node_modules/electron/install.js 恢复开发运行时。
+WORKBENCH_LIVE_PI=1 npx tsx tests/mainstream-cli-ui.e2e.ts
+# Cursor 先由用户在终端登录，再用同一适配器脚本验收；Gemini 先由用户安装。
 ```
 
 Pi 真实测试只自动批准隔离目录 evidence.txt 的指定 read/write，不批准任意命令；Claude/Cursor 真实脚本仅请求文本，不请求文件、shell 或外部消息。临时项目删除后，CLI 自身正常保存的原生会话仍遵循各自的本机存储规则，不提交到 Git。
 
-本轮后端使用真实公共依赖做独立严格类型检查，宿主打包与修改后的 renderer 入口语法检查通过；它们不能替代上述待完成的全项目构建和 UI 验收。旧测试夹具把 Node 路径直接放进 shebang，在带空格的 fnm 路径下会 ENOENT；现通过 `tests/node-script.ts` 的可执行 JS 头修复夹具，并覆盖带空格、单引号的 Node 路径及参数透传，不改变生产执行器或放宽断言。
+旧测试夹具把 Node 路径直接放进 shebang，在带空格的 fnm 路径下会 ENOENT；现通过 `tests/node-script.ts` 的可执行 JS 头修复夹具，并覆盖带空格、单引号的 Node 路径及参数透传，不改变生产执行器或放宽断言。

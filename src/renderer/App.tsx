@@ -228,6 +228,7 @@ export default function App() {
   } = useCodexUpdate(codexInfo, workbenchMounted && !onboardingVisible);
   const currentConnection =
     codexConnection.conversationId === conversationId ? codexConnection : undefined;
+  const defaultConnection = currentAgentId === settings.agent ? currentConnection : undefined;
   const agentStatus = sessionLabel(currentAgent, currentConnection);
   const connected = feishu.status === 'connected' && feishu.paired;
   const minDrawerWidth = 390;
@@ -884,7 +885,9 @@ export default function App() {
                   <div className="agent-connection-heading">
                     <AgentIcon agent={settings.agent} size={24} />
                     <h4>{defaultAgent?.name || settings.agent}</h4>
-                    <span className="small-badge">新对话默认</span>
+                    <span className="small-badge">
+                      {sessionLabel(defaultAgent, defaultConnection)}
+                    </span>
                   </div>
                   <div className="settings-value-row">
                     <span>登录方式</span>
@@ -895,7 +898,7 @@ export default function App() {
                     <ModelPicker
                       settings={settings}
                       busy={busy}
-                      connectionReady={currentConnection?.status === 'ready'}
+                      connectionReady={defaultConnection?.status === 'ready'}
                       onChange={setSettings}
                     />
                   </div>
@@ -929,9 +932,9 @@ export default function App() {
                   {defaultAgent?.detail && (
                     <p className="settings-agent-detail">{defaultAgent.detail}</p>
                   )}
-                  {currentConnection?.status === 'error' && currentConnection.message && (
+                  {defaultConnection?.status === 'error' && defaultConnection.message && (
                     <div className="inline-error" role="alert">
-                      {currentConnection.message}
+                      {defaultConnection.message}
                     </div>
                   )}
                   <p className="settings-card-caption">
@@ -956,7 +959,11 @@ export default function App() {
                       size="sm"
                       variant="secondary"
                       isDisabled={
-                        busy || !agent.available || !agent.supported || agent.id === settings.agent
+                        busy ||
+                        !agent.available ||
+                        !agent.supported ||
+                        agent.authentication === 'missing' ||
+                        agent.id === settings.agent
                       }
                       onPress={() => void selectDefaultAgent(agent.id)}
                     >
@@ -1558,6 +1565,7 @@ export default function App() {
                                     <ExecutionPanel
                                       message={message}
                                       conversationId={conversationId!}
+                                      agent={currentAgentId}
                                       pending={conversationRequests.find(
                                         (pending) => pending.messageId === message.id,
                                       )}
