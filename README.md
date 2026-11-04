@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Dylan-Nihilo/athena/releases/download/v0.7.0/Athena-0.7.0-mac-arm64.dmg"><strong>下载 macOS 版</strong></a>
+  <a href="https://github.com/bitcat-ai/athena/releases/download/v0.8.0/Athena-0.8.0-mac-arm64.dmg"><strong>下载 macOS 版</strong></a>
   &nbsp;·&nbsp;
   <a href="docs/user-guide.md">使用指南</a>
   &nbsp;·&nbsp;
@@ -21,7 +21,7 @@
 </p>
 
 <p align="center">
-  <sub>macOS · Apple Silicon · v0.7.0</sub>
+  <sub>macOS · Apple Silicon · v0.8.0</sub>
 </p>
 
 <p align="center">
@@ -59,9 +59,9 @@
 
 </details>
 
-**公开下载版本：[0.7.0](https://github.com/Dylan-Nihilo/athena/releases/tag/v0.7.0)** · [ZIP 归档](https://github.com/Dylan-Nihilo/athena/releases/download/v0.7.0/Athena-0.7.0-mac-arm64.zip) · [SHA-256 校验](https://github.com/Dylan-Nihilo/athena/releases/download/v0.7.0/SHA256SUMS.txt) · [全部版本](https://github.com/Dylan-Nihilo/athena/releases)
+**公开下载版本：[0.8.0](https://github.com/bitcat-ai/athena/releases/tag/v0.8.0)** · [ZIP 归档](https://github.com/bitcat-ai/athena/releases/download/v0.8.0/Athena-0.8.0-mac-arm64.zip) · [SHA-256 校验](https://github.com/bitcat-ai/athena/releases/download/v0.8.0/SHA256SUMS.txt) · [全部版本](https://github.com/bitcat-ai/athena/releases)
 
-> 当前 macOS Apple Silicon 安装包已完成 Developer ID 正式签名和 Apple 公证，尚无自动更新。安装包不包含用户登录或 BrowserOS neo；引导会按需准备运行组件。
+> 0.8.0 的 macOS Apple Silicon 安装包已完成 Developer ID 正式签名和 Apple 公证，尚无自动更新。安装包不包含用户登录或 BrowserOS neo；引导会按需准备运行组件。
 
 ## 使用之前
 
