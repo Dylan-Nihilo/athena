@@ -39,7 +39,7 @@ npm start
 npm run package
 ```
 
-- 安装依赖前设置环境变量 `HUGEICONS_NPM_TOKEN`，供 `@hugeicons-pro` 的 CollectUI 私服鉴权。
+- HugeIcons Pro 的 CollectUI 鉴权配置在用户级 `~/.npmrc` 或 CI 临时用户配置中；仓库 `.npmrc` 只保留 registry，不放 Token 或仓库级鉴权占位。
 - `npm ci` 的 postinstall 会执行 `heroui:setup`。安装脚本不自动读取 `.env`，密钥通过环境配置。
 - `setup:browseros` 获取并校验官方固定版本，不启动浏览器或覆盖已有不同安装。
 - `package` 生成本机应用目录；当前项目使用 ad-hoc 签名，未配置 Developer ID 分发签名、公证或自动更新。不要把项目配置写成“系统找不到证书”。
