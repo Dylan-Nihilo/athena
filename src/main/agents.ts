@@ -13,13 +13,13 @@ import type {
   AgentInfo,
   BrowserTool,
   CodexUpdateStatus,
-  ElementDetails,
   ElementRef,
   ToolCall,
   ToolResult,
   UserInputRequest,
 } from '../shared/types.ts';
 
+import type { AgentSession } from './agent-session';
 import { parseTokenCounts, readUsageBaseline, readExecutionModel } from './usage';
 import {
   zeroTokens,
@@ -284,18 +284,7 @@ interface Run {
   resolve: () => void;
   reject: (error: Error) => void;
 }
-interface SessionOptions {
-  workspace: string;
-  executablePath: string;
-  sessionId?: string;
-  sessionToolsFingerprint?: string;
-  historyForToolUpgrade?: string;
-  tools: BrowserTool[];
-  inspectSelectedElement?: (ref: string) => Promise<ElementDetails>;
-  callTool: (name: string, args: Record<string, unknown>) => Promise<ToolResult>;
-  onEvent: (event: AgentEvent) => void;
-  onClose?: (reason: string) => void;
-}
+type SessionOptions = import('./agent-session').AgentSessionOptions;
 
 export function browserToolsFingerprint(tools: BrowserTool[]): string {
   const ordered = (value: unknown, depth = 0): unknown => {
@@ -435,7 +424,7 @@ function imageUrl(image: string): string | undefined {
   }
 }
 
-export class CodexSession {
+export class CodexSession implements AgentSession {
   private options: SessionOptions;
   private child?: ChildProcessWithoutNullStreams;
   private startup?: Promise<void>;

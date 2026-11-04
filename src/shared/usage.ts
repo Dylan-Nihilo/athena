@@ -33,7 +33,7 @@ export interface ExecutionModel {
   requested?: string;
   model?: string;
   effort?: string;
-  source: 'thread-response' | 'turn-context' | 'rerouted' | 'unconfirmed';
+  source: 'thread-response' | 'turn-context' | 'cli-message' | 'rerouted' | 'unconfirmed';
   previousModel?: string;
 }
 export interface UsageRecord {
