@@ -30,11 +30,18 @@ const make = (sessionId?: string) =>
     onEvent(event) {
       events.push(event);
       if (event.type === 'approval') {
-        const detail = event.request.detail;
-        const allowed =
-          /Pi · (write|read)$/.test(event.request.title) &&
-          detail.includes('evidence.txt') &&
-          !detail.includes('..');
+        let allowed = false;
+        try {
+          const input = JSON.parse(event.request.detail);
+          allowed =
+            /Pi · (write|read)$/.test(event.request.title) &&
+            typeof input.path === 'string' &&
+            path.resolve(workspace, input.path) === path.join(workspace, 'evidence.txt') &&
+            (!event.request.title.endsWith('write') ||
+              (typeof input.content === 'string' && input.content.trim() === marker));
+        } catch {
+          /* Unreviewable arguments must never be approved. */
+        }
         session.resolveApproval(event.request.id, allowed);
       }
       if (event.type === 'delta' && stopOnDelta) {

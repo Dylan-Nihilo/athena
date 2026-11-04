@@ -53,6 +53,12 @@ import { ConversationSearch } from './ConversationSearch';
 import { UserMenu, WebContextMenu, useAppearance } from './HomeMenus';
 import { Onboarding } from './Onboarding';
 import type { OnboardingState } from '../shared/onboarding';
+import {
+  agentModelSelection,
+  conversationAgent,
+  conversationModelSelection,
+  supportsBrowser,
+} from '../shared/agents';
 import type {
   AgentInfo,
   AppEvent,
@@ -196,12 +202,24 @@ export default function App() {
   viewedConversation.current = currentView;
   const messages = conversation?.messages || [];
   const isHome = !messages.length && !browserVisible && !editingElement;
-  const setupRequired = Boolean(onboardingState?.requiresSetup && !onboardingState.coreReady);
+  const setupRequired = Boolean(
+    onboardingState?.requiresSetup && onboardingState.workspace.status !== 'ready',
+  );
   const busy = conversations.some((item) =>
     item.messages.some((message) => message.status === 'streaming'),
   );
   const currentBusy = messages.some((message) => message.status === 'streaming');
-  const currentAgent = agents.find((item) => item.id === settings.agent);
+  const currentAgentId = conversation ? conversationAgent(conversation) : settings.agent;
+  const currentAgent = agents.find((item) => item.id === currentAgentId);
+  const defaultAgent = agents.find((item) => item.id === settings.agent);
+  const currentSelection = conversation
+    ? conversationModelSelection(settings, conversation)
+    : agentModelSelection(settings, currentAgentId);
+  const conversationSettings: Settings = {
+    ...settings,
+    agent: currentAgentId,
+    modelSelections: { ...settings.modelSelections, [currentAgentId]: currentSelection },
+  };
   const codexInfo = agents.find((item) => item.id === 'codex');
   const {
     update: codexUpdate,
@@ -210,8 +228,7 @@ export default function App() {
   } = useCodexUpdate(codexInfo, workbenchMounted && !onboardingVisible);
   const currentConnection =
     codexConnection.conversationId === conversationId ? codexConnection : undefined;
-  const codexStatus = sessionLabel(codexInfo, currentConnection);
-  const agentStatus = settings.agent === 'codex' ? codexStatus : sessionLabel(currentAgent);
+  const agentStatus = sessionLabel(currentAgent, currentConnection);
   const connected = feishu.status === 'connected' && feishu.paired;
   const minDrawerWidth = 390;
   const maxDrawerWidth = Math.max(minDrawerWidth, panelWidth - 420);
@@ -230,6 +247,8 @@ export default function App() {
       return false;
     onboardingStateRef.current = next;
     setOnboardingState(next);
+    if (next.selectedAgent)
+      setSettings((previous) => ({ ...previous, agent: next.selectedAgent! }));
     return true;
   }, []);
   const action = useCallback(
@@ -472,7 +491,7 @@ export default function App() {
       !workbenchMounted ||
       onboardingVisible ||
       !conversationId ||
-      settings.agent !== 'codex'
+      !currentAgent?.supported
     )
       return;
     let disposed = false;
@@ -493,10 +512,11 @@ export default function App() {
     workbenchMounted,
     onboardingVisible,
     conversationId,
-    settings.agent,
+    currentAgentId,
+    currentAgent?.supported,
     settings.workspace,
-    settings.modelSelection?.model,
-    settings.modelSelection?.effort,
+    currentSelection?.model,
+    currentSelection?.effort,
   ]);
   useEffect(() => {
     if (!onboardingVisible && !settingsTab && !showUsage && stickToBottom.current)
@@ -629,6 +649,7 @@ export default function App() {
       !loaded ||
       setupRequired ||
       !currentAgent?.available ||
+      !currentAgent.supported ||
       currentAgent.authentication === 'missing'
     )
       return;
@@ -698,9 +719,29 @@ export default function App() {
     if (result) setSettings(result);
   };
   const selectAgent = async (id: string) => {
+    if (id === currentAgentId) {
+      setAgentMenu(false);
+      return;
+    }
+    const result =
+      conversation && !conversation.messages.length && !conversation.agentSessionId
+        ? await action<Conversation>('conversation:agent', {
+            conversationId: conversation.id,
+            agent: id,
+          })
+        : await action<Conversation>('conversation:new', { agent: id });
+    if (result) {
+      upsert(result);
+      setConversationId(result.id);
+      setSelected(undefined);
+      setSelectedEdit(undefined);
+      setInspectorOpen(false);
+    }
+    setAgentMenu(false);
+  };
+  const selectDefaultAgent = async (id: string) => {
     const result = await action<Settings>('settings:agent', { id });
     if (result) setSettings(result);
-    setAgentMenu(false);
   };
   const openOnboarding = async () => {
     if (openingOnboarding) return;
@@ -841,9 +882,9 @@ export default function App() {
               <Card className="agent-connection-card">
                 <Card.Content>
                   <div className="agent-connection-heading">
-                    <AgentIcon agent="codex" size={24} />
-                    <h4>Codex CLI</h4>
-                    <span className="small-badge">{codexStatus}</span>
+                    <AgentIcon agent={settings.agent} size={24} />
+                    <h4>{defaultAgent?.name || settings.agent}</h4>
+                    <span className="small-badge">新对话默认</span>
                   </div>
                   <div className="settings-value-row">
                     <span>登录方式</span>
@@ -858,14 +899,16 @@ export default function App() {
                       onChange={setSettings}
                     />
                   </div>
-                  {codexInfo?.version && (
+                  {defaultAgent?.version && (
                     <div className="settings-value-row">
                       <span>版本</span>
                       <div className="cli-version-value">
                         <span>
-                          {installedVersion ? `codex-cli ${installedVersion}` : codexInfo.version}
+                          {settings.agent === 'codex' && installedVersion
+                            ? `codex-cli ${installedVersion}`
+                            : defaultAgent.version}
                         </span>
-                        {codexUpdate && (
+                        {settings.agent === 'codex' && codexUpdate && (
                           <Button
                             size="sm"
                             variant="ghost"
@@ -878,58 +921,69 @@ export default function App() {
                       </div>
                     </div>
                   )}
-                  {codexInfo?.path && (
-                    <p className="settings-agent-path" title={codexInfo.path}>
-                      {codexInfo.path}
+                  {defaultAgent?.path && (
+                    <p className="settings-agent-path" title={defaultAgent.path}>
+                      {defaultAgent.path}
                     </p>
                   )}
-                  {codexInfo?.detail && <p className="settings-agent-detail">{codexInfo.detail}</p>}
+                  {defaultAgent?.detail && (
+                    <p className="settings-agent-detail">{defaultAgent.detail}</p>
+                  )}
                   {currentConnection?.status === 'error' && currentConnection.message && (
                     <div className="inline-error" role="alert">
                       {currentConnection.message}
                     </div>
                   )}
                   <p className="settings-card-caption">
-                    模型选择在下一次任务中生效。登录由本机 Codex 管理。
+                    默认 CLI 用于新对话，已有对话保持原 CLI。登录与服务配置由本机 CLI 管理。
                   </p>
                 </Card.Content>
               </Card>
-              <h4 className="settings-subheading">其他本机 Agent</h4>
+              <h4 className="settings-subheading">选择新对话默认 CLI</h4>
               <div className="agent-settings-list">
-                {agents
-                  .filter((agent) => agent.id !== 'codex')
-                  .map((agent) => (
-                    <div className="agent-setting-row" key={agent.id}>
-                      <div className="integration-icon agent-brand-tile">
-                        <AgentIcon agent={agent.id} size={25} />
-                      </div>
-                      <div>
-                        <strong>{agent.name}</strong>
-                        <p>{agent.path ? agent.version || '已找到可执行文件' : '未检测到安装'}</p>
-                        {agent.path && <small title={agent.path}>{agent.path}</small>}
-                        {agent.detail && <p className="agent-detail">{agent.detail}</p>}
-                      </div>
-                      <span
-                        className={`small-badge ${agent.available && agent.supported ? 'success' : ''}`}
-                      >
-                        {agent.available
-                          ? agent.supported
-                            ? agent.authentication === 'missing'
-                              ? '需要登录'
-                              : agent.authentication === 'unknown'
-                                ? '登录待验证'
-                                : '可使用'
-                            : '已检测'
-                          : agent.path
-                            ? '启动异常'
-                            : '未安装'}
-                      </span>
+                {agents.map((agent) => (
+                  <div className="agent-setting-row" key={agent.id}>
+                    <div className="integration-icon agent-brand-tile">
+                      <AgentIcon agent={agent.id} size={25} />
                     </div>
-                  ))}
+                    <div>
+                      <strong>{agent.name}</strong>
+                      <p>{agent.path ? agent.version || '已找到可执行文件' : '未检测到安装'}</p>
+                      {agent.path && <small title={agent.path}>{agent.path}</small>}
+                      {agent.detail && <p className="agent-detail">{agent.detail}</p>}
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      isDisabled={
+                        busy || !agent.available || !agent.supported || agent.id === settings.agent
+                      }
+                      onPress={() => void selectDefaultAgent(agent.id)}
+                    >
+                      {agent.id === settings.agent ? '默认 CLI' : '设为默认'}
+                    </Button>
+                    <span
+                      className={`small-badge ${agent.available && agent.supported ? 'success' : ''}`}
+                    >
+                      {agent.available
+                        ? agent.supported
+                          ? agent.authentication === 'missing'
+                            ? '需要登录'
+                            : agent.authentication === 'unknown'
+                              ? '登录待验证'
+                              : '可使用'
+                          : '已检测'
+                        : agent.path
+                          ? '启动异常'
+                          : '未安装'}
+                    </span>
+                  </div>
+                ))}
               </div>
               <div className="settings-note">
-                Codex 使用你在终端中已有的登录状态。需要登录时，在终端执行 <code>codex login</code>
-                ，然后刷新。
+                使用本机 CLI
+                已有的登录与模型服务配置。未安装或需要登录时，请在终端完成后刷新；不会自动改用其他
+                CLI。
               </div>
               <Card className="settings-workspace-card">
                 <Card.Content>
@@ -1386,7 +1440,7 @@ export default function App() {
                                 : undefined
                             }
                           >
-                            <AgentIcon agent={settings.agent} size={15} />
+                            <AgentIcon agent={currentAgentId} size={15} />
                             {currentConnection?.status === 'starting' ? (
                               <Icon icon={Loading02Icon} size={12} className="spin" />
                             ) : (
@@ -1669,7 +1723,9 @@ export default function App() {
                           <PromptInput.Toolbar className="composer-controls">
                             <PromptInput.ToolbarStart>
                               <WebContextMenu
-                                ready={browser.status === 'ready'}
+                                ready={
+                                  browser.status === 'ready' && supportsBrowser(currentAgentId)
+                                }
                                 recording={browser.recording}
                                 onPage={showCurrentPage}
                                 onSelect={selectPageElement}
@@ -1682,11 +1738,11 @@ export default function App() {
                                   size="md"
                                   aria-label="选择 Agent"
                                   aria-describedby="composer-agent-name"
-                                  title={currentAgent?.name || settings.agent}
+                                  title={currentAgent?.name || currentAgentId}
                                 >
-                                  <AgentIcon agent={settings.agent} size={18} />
+                                  <AgentIcon agent={currentAgentId} size={18} />
                                   <span id="composer-agent-name" className="sr-only">
-                                    {currentAgent?.name || settings.agent}
+                                    {currentAgent?.name || currentAgentId}
                                   </span>
                                   <Icon
                                     icon={ArrowDown01Icon}
@@ -1724,7 +1780,7 @@ export default function App() {
                                                 : '未检测到'}
                                             </Description>
                                           </div>
-                                          {agent.id === settings.agent && (
+                                          {agent.id === currentAgentId && (
                                             <Icon
                                               icon={Tick02Icon}
                                               size={14}
@@ -1742,7 +1798,8 @@ export default function App() {
                                 </Dropdown.Popover>
                               </Dropdown>
                               <ModelPicker
-                                settings={settings}
+                                settings={conversationSettings}
+                                conversationId={conversationId}
                                 busy={busy}
                                 connectionReady={currentConnection?.status === 'ready'}
                                 onChange={setSettings}
@@ -1760,6 +1817,7 @@ export default function App() {
                                     setupRequired ||
                                     !draft.trim() ||
                                     !currentAgent?.available ||
+                                    !currentAgent.supported ||
                                     currentAgent.authentication === 'missing')
                                 }
                               />
@@ -1788,7 +1846,7 @@ export default function App() {
                           <div className="composer-availability" role="status">
                             <span>
                               {currentAgent?.authentication === 'missing'
-                                ? '请先登录本机 Codex，再刷新连接。'
+                                ? `请先在终端登录 ${currentAgent.name}，再刷新连接。`
                                 : '当前 Agent 尚不可用。'}
                             </span>
                             <ActionButton

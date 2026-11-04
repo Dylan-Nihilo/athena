@@ -9,7 +9,7 @@ import {
   safeStorage,
   shell,
 } from 'electron';
-import { readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
@@ -18,7 +18,10 @@ import { userInfo } from 'node:os';
 import { BrowserRuntime, discoverBrowserOS } from './browser';
 import { SharingRuntime } from './sharing';
 import { dispatchBrowserAction } from './browser-actions';
-import { createCodexUpdateChecker, CodexSession, detectAgents } from './agents';
+import { createCodexUpdateChecker, detectAgents } from './agents';
+import { createAgentSession } from './agent-factory';
+import type { AgentSession } from './agent-session';
+import { conversationAgent, conversationModelSelection, supportsBrowser } from '../shared/agents';
 import { NeoBrowserRuntime } from './neo-browser';
 import { FeishuConnector } from './feishu';
 import { TurnNotifications } from './notifications';
@@ -28,6 +31,7 @@ import { managedCodexPath, OnboardingRuntime } from './onboarding';
 import type { ModelOption } from '../shared/usage';
 import type {
   AgentEvent,
+  AgentId,
   AgentInfo,
   ApprovalRequest,
   AppEvent,
@@ -66,11 +70,12 @@ let window: BrowserWindow | undefined;
 let store: Store;
 let usage: UsageStore;
 let onboarding: OnboardingRuntime | undefined;
-let modelCatalog: ModelOption[] | undefined;
-let modelCatalogRequest: Promise<ModelOption[]> | undefined;
-let catalogProbe: CodexSession | undefined;
-let catalogRevision = 0;
-const preDiscoverySessions = new WeakSet<CodexSession>();
+const modelCatalogs = new Map<
+  string,
+  { models?: ModelOption[]; request?: Promise<ModelOption[]>; probe?: AgentSession }
+>();
+let piPermissionsPath = '';
+const preDiscoverySessions = new WeakSet<AgentSession>();
 let codexConnection: CodexConnectionState = { status: 'idle' };
 let selectedConversationId: string | undefined;
 let connectionRevision = 0;
@@ -86,7 +91,7 @@ let active:
   | {
       conversationId: string;
       messageId: string;
-      session: CodexSession;
+      session: AgentSession;
       readonly: boolean;
       notifications: TurnNotifications;
       requests: PendingAgentRequest[];
@@ -99,7 +104,7 @@ let preparingTurn: { cancelled: boolean } | undefined;
 let lastFrame: BrowserFrame | undefined;
 let demoServer: Server | undefined;
 let demoUrl = '';
-const sessions = new Map<string, CodexSession>();
+const sessions = new Map<string, AgentSession>();
 const readOnlyBrowserTools = new Set([
   'workbench_browser_snapshot',
   'workbench_browser_screenshot',
@@ -132,14 +137,41 @@ function connectionState(state: CodexConnectionState) {
   codexConnection = state;
   emit({ type: 'codex:state', state });
 }
-function codexInfo() {
-  const info = agents.find((agent) => agent.id === 'codex' && agent.available && agent.supported);
-  if (!info?.path || info.authentication === 'missing')
-    throw new Error('请先登录本机 Codex，再刷新连接');
+function selectableAgent(id: AgentId) {
+  const info = agents.find((agent) => agent.id === id && agent.available && agent.supported);
+  if (!info?.path) throw new Error(`本机 ${id} 不可用，请在终端检查安装后刷新`);
   return { ...info, path: info.path };
 }
+function agentInfo(id: AgentId) {
+  const info = selectableAgent(id);
+  if (info.authentication === 'missing') throw new Error(`请先在终端登录 ${info.name}，再刷新连接`);
+  return info;
+}
+async function selectDefaultAgent(value: unknown) {
+  if (active || startingTurn) throw new Error('请先停止当前任务');
+  if (onboarding?.changingEnvironment) throw new Error('请先完成或取消当前环境准备');
+  const info = selectableAgent(string(value, 50) as AgentId);
+  store.data.settings.agent = info.id;
+  clearModelCatalog();
+  await store.save();
+  return store.data.settings;
+}
+function nativeSessionOptions() {
+  return {
+    permissionsExtensionPath: piPermissionsPath,
+    sessionDirectory: path.join(
+      app.getPath('userData'),
+      'cli-sessions',
+      createHash('sha256').update(store.data.settings.workspace).digest('hex').slice(0, 24),
+    ),
+  };
+}
+function toolsFor(conversation: Conversation) {
+  return supportsBrowser(conversationAgent(conversation)) ? neo.getTools() : [];
+}
 function assertTaskEnvironment() {
-  if (onboarding?.blocksTasks) throw new Error('请先完成 Codex 登录和工作目录准备');
+  if (onboarding?.getState().requiresSetup && onboarding.getState().workspace.status !== 'ready')
+    throw new Error('请先确认可访问的工作目录');
   if (onboarding?.changingEnvironment)
     throw new Error('运行环境正在准备，请等待完成或取消这次准备');
 }
@@ -156,57 +188,72 @@ function selectedConversation() {
     createConversation()
   );
 }
-async function listModels(refresh = false) {
+async function listModels(refresh = false, conversation?: Conversation) {
   assertTaskEnvironment();
-  if (!refresh && modelCatalog) return modelCatalog;
-  if (modelCatalogRequest) return modelCatalogRequest;
-  const revision = catalogRevision;
+  if (conversation?.workspace && conversation.workspace !== store.data.settings.workspace)
+    throw new Error('此对话属于其他工作目录');
+  const id = conversation ? conversationAgent(conversation) : store.data.settings.agent;
+  const key = JSON.stringify([id, store.data.settings.workspace, agentInfo(id).path]);
+  if (refresh) {
+    modelCatalogs.get(key)?.probe?.close();
+    modelCatalogs.delete(key);
+  }
+  let entry = modelCatalogs.get(key);
+  if (!entry) {
+    entry = {};
+    modelCatalogs.set(key, entry);
+  }
+  const catalog = entry;
+  if (catalog.models) return catalog.models;
+  if (catalog.request) return catalog.request;
   const request = (async () => {
     const workspace = store.data.settings.workspace;
-    const { path: executablePath } = codexInfo();
+    const { path: executablePath } = agentInfo(id);
     const current =
       active?.session ??
       (selectedConversationId ? sessions.get(selectedConversationId) : undefined);
     const reusable =
       current?.isReady &&
       !preDiscoverySessions.has(current) &&
-      current.matchesConfiguration(workspace, executablePath, neo.getTools());
+      current.matchesConfiguration(
+        workspace,
+        executablePath,
+        supportsBrowser(id) ? neo.getTools() : [],
+      );
     const client = reusable
       ? current
-      : (catalogProbe = new CodexSession({
+      : (catalog.probe = createAgentSession(id, {
           workspace,
           executablePath,
+          ...nativeSessionOptions(),
           tools: [],
           callTool: async () => ({ isError: true, text: '模型目录连接不能执行工具' }),
           onEvent() {},
         }));
     try {
       const models = await client.listModels();
-      if (revision !== catalogRevision || client.isClosed)
+      if (modelCatalogs.get(key) !== catalog || client.isClosed)
         throw new Error('模型连接已改变，请刷新重试');
-      modelCatalog = models;
+      catalog.models = models;
       return models;
     } finally {
       if (!reusable) {
-        if (catalogProbe === client) catalogProbe = undefined;
+        if (catalog.probe === client) catalog.probe = undefined;
         client.close();
       }
     }
   })();
-  modelCatalogRequest = request;
+  catalog.request = request;
   void request
     .finally(() => {
-      if (modelCatalogRequest === request) modelCatalogRequest = undefined;
+      if (catalog.request === request) catalog.request = undefined;
     })
     .catch(() => {});
   return request;
 }
 function clearModelCatalog() {
-  catalogRevision++;
-  catalogProbe?.close();
-  catalogProbe = undefined;
-  modelCatalog = undefined;
-  modelCatalogRequest = undefined;
+  for (const catalog of modelCatalogs.values()) catalog.probe?.close();
+  modelCatalogs.clear();
 }
 function resetConnections() {
   connectionRevision++;
@@ -217,6 +264,14 @@ function resetConnections() {
   sessions.clear();
   for (const session of previous) session.close();
   connectionState({ status: 'idle' });
+}
+function invalidateCliConfiguration() {
+  if (!active && !startingTurn) resetConnections();
+  else {
+    resetAfterTurn = true;
+    clearModelCatalog();
+    for (const session of sessions.values()) preDiscoverySessions.add(session);
+  }
 }
 function prepareConversation(conversation: Conversation): Promise<void> {
   try {
@@ -232,11 +287,11 @@ function prepareConversation(conversation: Conversation): Promise<void> {
   const pending = warming.get(conversation.id);
   if (pending) return pending;
   const existing = sessions.get(conversation.id);
-  const info = agents.find((agent) => agent.id === 'codex');
+  const info = agents.find((agent) => agent.id === conversationAgent(conversation));
   if (
     existing?.isReady &&
     info?.path &&
-    existing.matchesConfiguration(store.data.settings.workspace, info.path, neo.getTools())
+    existing.matchesConfiguration(store.data.settings.workspace, info.path, toolsFor(conversation))
   ) {
     connectionState({ status: 'ready', conversationId: conversation.id });
     return Promise.resolve();
@@ -244,17 +299,17 @@ function prepareConversation(conversation: Conversation): Promise<void> {
   const revision = connectionRevision;
   connectionState({ status: 'starting', conversationId: conversation.id });
   const request = (async () => {
-    const info = codexInfo();
+    const info = agentInfo(conversationAgent(conversation));
     try {
-      if (onboarding?.allowsBrowserStartup !== false) await neo.start();
+      if (supportsBrowser(info.id) && onboarding?.allowsBrowserStartup !== false) await neo.start();
     } catch {
       /* Local CLI work does not require Neo. */
     }
     if (quitting || revision !== connectionRevision) throw new Error('连接配置已改变');
     // A send may have started while the browser connection was being prepared.
     if (active || startingTurn) return;
-    const session = getSession(conversation, info.path, neo.getTools());
-    await session.prepare(store.data.settings.modelSelection);
+    const session = getSession(conversation, info.path, toolsFor(conversation));
+    await session.prepare(conversationModelSelection(store.data.settings, conversation));
     if (quitting || revision !== connectionRevision || sessions.get(conversation.id) !== session)
       throw new Error('连接配置已改变');
     if (selectedConversationId === conversation.id)
@@ -270,7 +325,7 @@ function prepareConversation(conversation: Conversation): Promise<void> {
       connectionState({
         status: 'error',
         conversationId: conversation.id,
-        message: error instanceof Error ? error.message : 'Codex 连接失败',
+        message: error instanceof Error ? error.message : 'CLI 连接失败',
       });
     throw error;
   });
@@ -305,10 +360,11 @@ function getConversation(id: unknown): Conversation {
   if (!conversation) throw new Error('找不到这个对话');
   return conversation;
 }
-function createConversation(title = '新对话') {
+function createConversation(title = '新对话', agent = store.data.settings.agent) {
   const conversation: Conversation = {
     id: randomUUID(),
     title,
+    agent,
     updatedAt: Date.now(),
     messages: [],
     workspace: store.data.settings.workspace,
@@ -385,7 +441,7 @@ function getSession(
   executablePath: string,
   tools: BrowserTool[],
   messages = conversation.messages,
-): CodexSession {
+): AgentSession {
   let session = sessions.get(conversation.id);
   if (
     session &&
@@ -401,7 +457,8 @@ function getSession(
     session = undefined;
   }
   if (!session) {
-    session = new CodexSession({
+    session = createAgentSession(conversationAgent(conversation), {
+      ...nativeSessionOptions(),
       workspace: store.data.settings.workspace,
       executablePath,
       sessionId: conversation.agentSessionId,
@@ -412,6 +469,8 @@ function getSession(
       tools,
       inspectSelectedElement: (ref) => browser.getElementDetails(ref),
       callTool: async (name: string, args: unknown) => {
+        if (!supportsBrowser(conversationAgent(conversation)))
+          return { text: '当前 CLI 未接通网页工具，不能执行此操作。', isError: true };
         if (!active || active.conversationId !== conversation.id)
           return { text: '任务已经停止，不能再执行浏览器操作。', isError: true };
         if (
@@ -465,17 +524,13 @@ async function runTurn(
   if (active || startingTurn) throw new Error('当前任务还在进行，请先停止或等待完成');
   if (conversation.workspace && conversation.workspace !== store.data.settings.workspace)
     throw new Error('这段对话属于另一个工作目录。请切换回原目录，或新建对话。');
-  const info = agents.find(
-    (agent) => agent.id === store.data.settings.agent && agent.available && agent.supported,
-  );
-  if (!info?.path) throw new Error('请先安装并登录 Codex，再刷新 Agent 列表');
-  if (info.authentication === 'missing')
-    throw new Error('Codex 尚未登录，请在终端执行 codex login 后刷新。');
+  const info = agentInfo(conversationAgent(conversation));
+  if (!supportsBrowser(info.id) && selectedElement)
+    throw new Error('当前 CLI 尚未接通网页元素工具，请移除元素上下文后发送');
   if (!text.trim()) throw new Error('请输入任务');
   if (resetAfterTurn) resetConnections();
-  const modelSelection = store.data.settings.modelSelection
-    ? { ...store.data.settings.modelSelection }
-    : undefined;
+  const selectedModel = conversationModelSelection(store.data.settings, conversation);
+  const modelSelection = selectedModel ? { ...selectedModel } : undefined;
   if (!conversation.messages.length) conversation.title = text.trim().split('\n')[0].slice(0, 32);
   const visibleHistory = conversation.messages.slice();
   const user: ChatMessage = {
@@ -509,7 +564,7 @@ async function runTurn(
   usage.start(assistant.id, info.id, modelSelection?.model);
   saveUsage();
   try {
-    if (onboarding?.allowsBrowserStartup !== false) await neo.start();
+    if (supportsBrowser(info.id) && onboarding?.allowsBrowserStartup !== false) await neo.start();
   } catch {
     /* Local CLI tasks remain available; Neo reports its own connection state. */
   }
@@ -524,7 +579,21 @@ async function runTurn(
     emit({ type: 'conversation:updated', conversation });
     return assistant.text;
   }
-  const session = getSession(conversation, info.path, neo.getTools(), visibleHistory);
+  let session: AgentSession;
+  try {
+    session = getSession(conversation, info.path, toolsFor(conversation), visibleHistory);
+  } catch (error) {
+    startingTurn = false;
+    preparingTurn = undefined;
+    assistant.status = 'error';
+    assistant.failure = error instanceof Error ? error.message : 'CLI 会话配置无效';
+    assistant.text = assistant.failure;
+    usage.finish(assistant.id, 'failed');
+    saveUsage();
+    await store.save();
+    emit({ type: 'conversation:updated', conversation });
+    throw error;
+  }
   const notifications = new TurnNotifications(
     { id: assistant.id, title: conversation.title, source },
     (id, message) => feishu.sendNotification(id, message),
@@ -547,11 +616,11 @@ async function runTurn(
     await session.prepare(modelSelection);
     connectionState({ status: 'ready', conversationId: conversation.id });
     if (active?.cancelled) throw new Error('任务已停止');
-    if (!readonly) browser.allowAgentControl();
+    if (!readonly && supportsBrowser(info.id)) browser.allowAgentControl();
     if (selectedElement && !readonly)
       void browser.setElementFeedback(selectedElement.ref, 'working').catch(() => {});
     let nativeContext = '';
-    if (neo.getState().status === 'ready') {
+    if (supportsBrowser(info.id) && neo.getState().status === 'ready') {
       const task = await neo.beginTask(assistant.id, readonly);
       assistant.neoSessionId = task.sessionId;
       nativeContext = task.context;
@@ -817,6 +886,9 @@ async function invoke(action: string, payload: unknown) {
         return onboarding.open();
       case 'onboarding:refresh':
         return onboarding.refresh();
+      case 'onboarding:agent':
+        await selectDefaultAgent(record(payload).id);
+        return onboarding.refresh();
       case 'onboarding:plan-install': {
         const kind = record(payload).kind;
         if (kind !== 'codex' && kind !== 'browser') throw new Error('安装类型无效');
@@ -825,6 +897,8 @@ async function invoke(action: string, payload: unknown) {
       case 'onboarding:install':
         return onboarding.install(string(record(payload).planId, 100));
       case 'onboarding:login/start':
+        if (store.data.settings.agent !== 'codex')
+          throw new Error('请在终端完成所选 CLI 的登录后重新检查');
         return onboarding.startLogin();
       case 'onboarding:login/reopen':
         return onboarding.reopenLogin();
@@ -888,21 +962,9 @@ async function invoke(action: string, payload: unknown) {
         payload !== undefined && record(payload).refresh === true,
       );
     case 'agents:refresh': {
-      const previous = agents.find((agent) => agent.id === 'codex');
       agents = await detectAgents(managedCodexPath(app.getPath('userData')));
-      const next = agents.find((agent) => agent.id === 'codex');
-      const changed =
-        previous?.path !== next?.path ||
-        previous?.version !== next?.version ||
-        previous?.authentication !== next?.authentication ||
-        previous?.available !== next?.available;
-      if (changed && !active && !startingTurn) resetConnections();
-      else {
-        if (changed) resetAfterTurn = true;
-        clearModelCatalog();
-        // Login status does not distinguish accounts using the same login method.
-        for (const session of sessions.values()) preDiscoverySessions.add(session);
-      }
+      // Paths/version/login method do not identify a changed provider or account configuration.
+      invalidateCliConfiguration();
       if (
         !active &&
         !startingTurn &&
@@ -913,8 +975,15 @@ async function invoke(action: string, payload: unknown) {
       }
       return agents;
     }
-    case 'models:list':
-      return listModels(payload !== undefined && record(payload).refresh === true);
+    case 'models:list': {
+      const data = payload === undefined ? {} : record(payload);
+      const conversation =
+        data.conversationId === undefined ? undefined : getConversation(data.conversationId);
+      const id = conversation ? conversationAgent(conversation) : store.data.settings.agent;
+      if (data.agent !== undefined && data.agent !== id)
+        throw new Error('CLI 已改变，请重新读取模型');
+      return listModels(data.refresh === true, conversation);
+    }
     case 'conversation:prepare': {
       const conversation = getConversation(record(payload).conversationId);
       await prepareConversation(conversation);
@@ -931,12 +1000,27 @@ async function invoke(action: string, payload: unknown) {
       const data = record(payload);
       const model = string(data.model, 256);
       const effort = data.effort === undefined ? undefined : string(data.effort, 50);
-      const catalog = modelCatalog ?? (await listModels());
+      const conversation =
+        data.conversationId === undefined ? undefined : getConversation(data.conversationId);
+      const id = conversation ? conversationAgent(conversation) : store.data.settings.agent;
+      if (data.agent !== undefined && data.agent !== id)
+        throw new Error('CLI 已改变，请重新选择模型');
+      const catalog = await listModels(false, conversation);
       if (active || startingTurn) throw new Error('当前任务结束后才能切换模型');
+      if ((conversation ? conversationAgent(conversation) : store.data.settings.agent) !== id)
+        throw new Error('CLI 已改变，请重新选择模型');
       const option = catalog.find((item) => item.model === model);
       if (!option || (effort && !option.efforts.some((item) => item.id === effort)))
         throw new Error('所选模型或推理强度不在 CLI 可用列表中，请刷新后重试');
-      store.data.settings.modelSelection = { model, effort: effort ?? option.defaultEffort };
+      const selection = { model, effort: effort ?? option.defaultEffort };
+      if (conversation) {
+        conversation.modelSelection = selection;
+        emit({ type: 'conversation:updated', conversation });
+      } else {
+        store.data.settings.modelSelections ??= {};
+        store.data.settings.modelSelections[id] = selection;
+        if (id === 'codex') store.data.settings.modelSelection = selection;
+      }
       await store.save();
       return store.data.settings;
     }
@@ -958,8 +1042,28 @@ async function invoke(action: string, payload: unknown) {
       return true;
     }
     case 'conversation:new': {
-      const conversation = createConversation();
+      const id =
+        payload === undefined
+          ? store.data.settings.agent
+          : (string(record(payload).agent, 50) as AgentId);
+      selectableAgent(id);
+      const conversation = createConversation('新对话', id);
       if (!active && !startingTurn) void prepareConversation(conversation).catch(() => {});
+      return conversation;
+    }
+    case 'conversation:agent': {
+      if (active || startingTurn) throw new Error('请先停止当前任务');
+      const data = record(payload);
+      const conversation = getConversation(data.conversationId);
+      if (conversation.messages.length || conversation.agentSessionId)
+        throw new Error('此对话已绑定 CLI，请新建对话以使用其他 CLI');
+      const info = selectableAgent(string(data.agent, 50) as AgentId);
+      resetConnections();
+      conversation.agent = info.id;
+      conversation.modelSelection = undefined;
+      clearModelCatalog();
+      await store.save();
+      emit({ type: 'conversation:updated', conversation });
       return conversation;
     }
     case 'conversation:send': {
@@ -1025,14 +1129,9 @@ async function invoke(action: string, payload: unknown) {
       return store.data.settings;
     }
     case 'settings:agent': {
-      if (active || startingTurn) throw new Error('请先停止当前任务');
-      if (onboarding?.changingEnvironment) throw new Error('请先完成或取消当前环境准备');
-      const id = string(record(payload).id, 50);
-      const agent = agents.find((item) => item.id === id && item.available && item.supported);
-      if (!agent) throw new Error('当前 Agent 尚不可用');
-      store.data.settings.agent = agent.id;
-      await store.save();
-      return store.data.settings;
+      const settings = await selectDefaultAgent(record(payload).id);
+      if (onboarding) await onboarding.refresh();
+      return settings;
     }
     case 'settings:browser': {
       if (active || startingTurn) throw new Error('请先停止当前任务');
@@ -1192,6 +1291,14 @@ async function launch() {
   demoUrl = `http://127.0.0.1:${address.port}`;
   store = new Store(app.getPath('userData'));
   await store.load();
+  const cliRuntime = path.join(app.getPath('userData'), 'runtime', 'athena-cli');
+  await mkdir(cliRuntime, { recursive: true, mode: 0o700 });
+  piPermissionsPath = path.join(cliRuntime, 'pi-permissions.mjs');
+  await writeFile(
+    piPermissionsPath,
+    await readFile(path.join(app.getAppPath(), 'resources/cli/pi-permissions.mjs')),
+    { mode: 0o600 },
+  );
   usage = new UsageStore(app.getPath('userData'));
   await usage.load(store.data.conversations);
   agents = await detectAgents(managedCodexPath(app.getPath('userData')));
@@ -1206,6 +1313,7 @@ async function launch() {
     probeAgents: () => detectAgents(managedCodexPath(app.getPath('userData'))),
     onAgents: (result) => {
       agents = result;
+      invalidateCliConfiguration();
     },
     pickWorkspace: async () => {
       const result = await dialog.showOpenDialog(window!, {
@@ -1356,7 +1464,7 @@ app.on('before-quit', (event) => {
   if (quitting) return;
   event.preventDefault();
   quitting = true;
-  catalogProbe?.close();
+  clearModelCatalog();
   if (preparingTurn) preparingTurn.cancelled = true;
   if (active) active.cancelled = true;
   browser?.revokeAgentControl();

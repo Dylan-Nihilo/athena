@@ -16,7 +16,7 @@ async function fixture(mode = 'normal') {
 const fs=require('node:fs'); const readline=require('node:readline');
 const mode=${JSON.stringify(mode)}; const log=${JSON.stringify(path.join(directory, 'commands.jsonl'))};
 const args=process.argv.slice(2); const si=args.indexOf('--session-id'); const sr=args.indexOf('--session');
-const sid=mode==='wrong-session'?'other':args[si>=0?si+1:sr+1];
+const sid=(mode==='wrong-session'||mode==='wrong-new-session')?'other':args[si>=0?si+1:sr+1];
 const out=r=>process.stdout.write(JSON.stringify(r)+'\\n');
 const response=(r,data)=>out({type:'response',id:r.id,command:r.type,success:true,data});
 const end=(word='done')=>{out({type:'message_end',message:{role:'assistant',model:'test-model',provider:'fixture',stopReason:'stop',content:[{type:'text',text:word}],usage:{input:10,output:3,cacheRead:2,cacheWrite:1,totalTokens:16}}});out({type:'agent_settled',aborted:false});};
@@ -33,7 +33,12 @@ if(r.type!=='prompt')return;
 if(r.message==='handled')return response(r,{disposition:'handled'});
 response(r,{disposition:'started'});start();
 if(r.message==='crash'){process.stderr.write('sk-secret-do-not-forward');process.exit(7);}
+if(r.message==='orphan'){
+  require('node:child_process').spawn(process.execPath,['-e',"process.on('SIGTERM',()=>{});require('node:fs').writeFileSync('ready-child','yes');setTimeout(()=>require('node:fs').writeFileSync('orphan-leak','bad'),2500)"],{cwd:process.cwd(),stdio:'ignore'});
+  const wait=setInterval(()=>{if(fs.existsSync('ready-child')){clearInterval(wait);process.exit(7);}},5);return;
+}
 if(r.message==='bad'){process.stdout.write('not json\\n');return;}
+if(r.message==='mismatch'){out({type:'message_update',assistantMessageEvent:{type:'text_delta',delta:'first'}});end('other');return;}
 if(r.message==='empty'){out({type:'agent_settled',aborted:false});return;}
 if(r.message==='approval'){out({type:'extension_ui_request',id:'confirm-1',method:'confirm',title:'Pi · write',message:'file.txt'});return;}
 if(r.message==='slow'){out({type:'message_update',assistantMessageEvent:{type:'text_delta',delta:'first'}});return;}
@@ -66,7 +71,7 @@ out({type:'agent_end',willRetry:true});setTimeout(()=>end('a\\u2028b!'),20);
   return { session, events, directory, cleanup };
 }
 async function until(check: () => boolean) {
-  for (let i = 0; i < 200; i++) {
+  for (let i = 0; i < 2000; i++) {
     if (check()) return;
     await new Promise((r) => setTimeout(r, 5));
   }
@@ -80,7 +85,10 @@ test('Pi waits for settled, preserves Unicode framing and never emits thinking',
     const models = await f.session.listModels();
     assert.equal(models[0].model, 'fixture/test-model');
     assert.deepEqual(models[0].efforts, []);
-    await f.session.send('normal');
+    await f.session.send('normal', undefined, undefined, {
+      model: 'fixture/test-model',
+      effort: 'high',
+    });
     assert.equal(
       f.events
         .filter((e) => e.type === 'delta')
@@ -93,7 +101,14 @@ test('Pi waits for settled, preserves Unicode framing and never emits thinking',
     const usage = f.events.find((e) => e.type === 'usage');
     assert.equal(usage?.total.inputTokens, 13);
     assert.equal(usage?.total.reasoningOutputTokens, null);
-    assert.ok(f.events.some((e) => e.type === 'model' && e.model.source === 'cli-message'));
+    assert.ok(
+      f.events.some(
+        (e) =>
+          e.type === 'model' &&
+          e.model.source === 'cli-message' &&
+          e.model.requested === 'fixture/test-model',
+      ),
+    );
     await f.session.send('normal');
     assert.equal(f.events.filter((e) => e.type === 'complete').length, 2);
   } finally {
@@ -146,6 +161,21 @@ test('Pi cancellation clears queues before abort and rejects overlapping sends',
   }
 });
 
+test(
+  'Pi terminates descendants even when the RPC process exits first',
+  { skip: process.platform === 'win32' },
+  async () => {
+    const f = await fixture();
+    try {
+      await assert.rejects(f.session.send('orphan'), /退出/);
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      await assert.rejects(readFile(path.join(f.directory, 'orphan-leak')), { code: 'ENOENT' });
+    } finally {
+      await f.cleanup();
+    }
+  },
+);
+
 test('Pi permits a successful automatic recovery but not an empty settled result', async () => {
   const f = await fixture();
   try {
@@ -159,8 +189,10 @@ test('Pi permits a successful automatic recovery but not an empty settled result
 for (const [mode, prompt, pattern] of [
   ['no-gate', '', /授权扩展/],
   ['wrong-session', '', /其他会话/],
+  ['wrong-new-session', '', /其他会话/],
   ['normal', 'handled', /独立任务/],
   ['normal', 'bad', /JSONL/],
+  ['normal', 'mismatch', /不一致/],
   ['normal', 'crash', /退出/],
 ] as const)
   test(`Pi fails closed: ${mode}/${prompt}`, async () => {

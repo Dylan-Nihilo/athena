@@ -4,17 +4,20 @@ import { ArrowDown01Icon, RotateCwIcon, XIcon } from '@hugeicons-pro/core-stroke
 import { Icon } from './ui';
 import { ReasoningSlider, effortName } from './ReasoningSlider';
 import type { Settings } from '../shared/types';
+import { agentModelSelection } from '../shared/agents';
 import type { ModelOption, ModelSelection } from '../shared/usage';
 
 export function ModelPicker({
   settings,
   busy,
   connectionReady = false,
+  conversationId,
   onChange,
 }: {
   settings: Settings;
   busy: boolean;
   connectionReady?: boolean;
+  conversationId?: string;
   onChange: (settings: Settings) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -27,31 +30,39 @@ export function ModelPicker({
   const request = useRef(0);
   const savingRef = useRef(false);
   const saveFocus = useRef<HTMLElement | null>(null);
-  const selection = settings.modelSelection;
+  const selection = agentModelSelection(settings, settings.agent);
   const current = models.find((model) => model.model === selection?.model);
   const modelName = current?.name ?? selection?.model ?? '默认模型';
   const levelName = selection?.effort && effortName(selection.effort);
   const disabled = busy || catalogStatus !== 'ready' || saving;
   const unavailable = selection && !current && catalogStatus === 'ready';
 
-  const refresh = useCallback(async (force = false) => {
-    const id = ++request.current;
-    setCatalogStatus('loading');
-    setError('');
-    try {
-      const value = await window.workbench.invoke<ModelOption[]>('models:list', { refresh: force });
-      if (id === request.current) {
-        setModels(value);
-        setCatalogStatus('ready');
+  const refresh = useCallback(
+    async (force = false) => {
+      const id = ++request.current;
+      setCatalogStatus('loading');
+      setError('');
+      try {
+        const value = await window.workbench.invoke<ModelOption[]>('models:list', {
+          refresh: force,
+          conversationId,
+          agent: settings.agent,
+        });
+        if (id === request.current) {
+          setModels(value);
+          setCatalogStatus('ready');
+        }
+      } catch {
+        if (id === request.current) {
+          setCatalogStatus('failed');
+          setError('无法读取模型目录，请刷新后重试。');
+        }
       }
-    } catch {
-      if (id === request.current) {
-        setCatalogStatus('failed');
-        setError('无法读取模型目录，请刷新后重试。');
-      }
-    }
-  }, []);
+    },
+    [conversationId, settings.agent],
+  );
   useEffect(() => {
+    setModels([]);
     void refresh();
     return () => {
       request.current++;
@@ -81,7 +92,13 @@ export function ModelPicker({
     setSaving(true);
     setError('');
     try {
-      onChange(await window.workbench.invoke<Settings>('settings:model', next));
+      onChange(
+        await window.workbench.invoke<Settings>('settings:model', {
+          ...next,
+          conversationId,
+          agent: settings.agent,
+        }),
+      );
     } catch (error) {
       setError(
         (error instanceof Error ? error.message : String(error)).replace(
@@ -191,9 +208,9 @@ export function ModelPicker({
                 : loading
                   ? '正在读取可用模型…'
                   : catalogStatus === 'ready' && !models.length
-                    ? '当前没有可选模型'
+                    ? '此 CLI 未提供模型目录，沿用本机默认配置'
                     : !selection
-                      ? '使用 Codex 默认配置'
+                      ? '使用本机 CLI 默认配置'
                       : '用于下一次任务'}
           </p>
         </Popover.Dialog>

@@ -40,7 +40,9 @@ Athena 把本机 Codex 任务和 BrowserOS neo 网页工作区放在同一个 Ma
 
 Athena 会检查本机 Codex CLI 的官方稳定版。发现新版本时会显示当前版本、最新版本和「查看更新说明」。收起后同一版本不再主动提醒，仍可在「设置与连接」的 Codex 版本行打开发布说明。更新由你自行安装。
 
-当前任务执行器只接通 Codex。Claude Code、OpenCode、Gemini CLI 的安装检测不代表它们已能在 Athena 中执行任务。
+在「设置与连接」选择新对话默认 CLI；输入栏的 Agent 菜单可为新对话改选 CLI，已有执行记录的对话不会迁移到其他 CLI。旧档案未记录执行器的对话继续使用 Codex。未安装或需要登录时，请在终端处理后刷新，不会自动安装或切换。
+
+当前包含 Codex、Pi、Claude Code、Gemini CLI 和 Cursor Agent 的协议适配。Pi 的本地工具逐项请求确认；Claude Code 限文本任务，Cursor 限只读任务，浏览器工具仍仅向 Codex 开放。Pi 与 Claude 的隔离真实模型验证已通过；Cursor 登录未就绪、Gemini 未安装，尚未完成其真实模型验收。OpenCode 仍只检测安装。详细能力与验证状态见 [本机 CLI 适配](mainstream-cli-support.md)。
 
 输入框的 Agent 按钮显示当前服务图标，悬停可查看名称。连接状态对应当前工作目录里的这段对话。同一对话就绪后会复用现有 CLI 会话；打开模型选择器无需重新登录。即使某段历史会话无法恢复，也可以单独刷新模型目录。
 

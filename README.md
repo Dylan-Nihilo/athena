@@ -103,7 +103,7 @@ npm run build
 npm run package
 ```
 
-运行任务还需已登录的 Codex。完整环境说明和测试范围见 [开发环境与验证](docs/user-guide.md#开发环境与验证)。
+源码分支的多 CLI 适配进度、能力限制与验收情况见 [本机 CLI 适配](docs/mainstream-cli-support.md)；已发布安装包仍以其发布说明为准。运行任务需所选 CLI 已完成本机登录。完整环境说明和测试范围见 [开发环境与验证](docs/user-guide.md#开发环境与验证)。
 
 </details>
 

@@ -3,10 +3,14 @@ import claude from './assets/agents/claudecode-color.svg';
 import opencode from './assets/agents/opencode.svg';
 import gemini from './assets/agents/geminicli-color.svg';
 import type { AgentId } from '../shared/types';
+import { TerminalIcon } from '@hugeicons-pro/core-stroke-rounded';
+import { Icon } from './ui';
 
-const marks: Record<AgentId, string> = { codex, claude, opencode, gemini };
+const marks: Partial<Record<AgentId, string>> = { codex, claude, opencode, gemini };
 
 export function AgentIcon({ agent, size = 20 }: { agent: AgentId; size?: number }) {
+  if (!marks[agent])
+    return <Icon icon={TerminalIcon} size={size} className="agent-icon" aria-hidden />;
   return (
     <img
       className="agent-icon"

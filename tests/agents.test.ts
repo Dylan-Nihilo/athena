@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { mkdtemp, writeFile, chmod, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { nodeShebang } from './node-script';
 import {
   CodexSession,
   browserToolsFingerprint,
@@ -24,7 +25,7 @@ async function fixture(
   const directory = await mkdtemp(path.join(tmpdir(), 'workbench-agent-test-'));
   const executable = path.join(directory, 'codex');
   const log = path.join(directory, 'requests.jsonl');
-  const code = `#!${process.execPath}
+  const code = `${nodeShebang()}
 const fs = require('node:fs');
 const readline = require('node:readline');
 const log = ${JSON.stringify(log)};
@@ -1345,7 +1346,15 @@ test('discovery uses executable PATH entries and does not pass an API key to log
   assert.equal(codex.authentication, 'ready');
   assert.equal(codex.version, 'codex-cli test');
   assert.equal(JSON.parse(await readFile(f.log, 'utf8')).apiKeyPresent, false);
-  assert.ok(agents.filter((agent) => agent.id !== 'codex').every((agent) => !agent.supported));
+  assert.deepEqual(agents.map((agent) => agent.id).sort(), [
+    'claude',
+    'codex',
+    'cursor',
+    'gemini',
+    'opencode',
+    'pi',
+  ]);
+  assert.equal(agents.find((agent) => agent.id === 'opencode')?.supported, false);
 });
 
 test('Codex update checks compare the installed CLI against the official stable release', async () => {
@@ -1411,7 +1420,7 @@ test('Codex update checks share probes, cache release metadata, and observe exte
   try {
     await writeFile(
       executable,
-      `#!${process.execPath}\nconst fs=require('fs');if(process.argv[2]!=='--version')process.exit(2);fs.appendFileSync(${JSON.stringify(path.join(root, 'probes'))},'v');console.log('codex-cli '+fs.readFileSync(${JSON.stringify(path.join(root, 'installed'))},'utf8'));`,
+      `${nodeShebang()}\nconst fs=require('fs');if(process.argv[2]!=='--version')process.exit(2);fs.appendFileSync(${JSON.stringify(path.join(root, 'probes'))},'v');console.log('codex-cli '+fs.readFileSync(${JSON.stringify(path.join(root, 'installed'))},'utf8'));`,
       { mode: 0o700 },
     );
     await writeFile(path.join(root, 'installed'), '0.99.0');

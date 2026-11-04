@@ -258,7 +258,11 @@ export class UsageStore {
   reroute(threadId: string, turnId: string, model: ExecutionModel) {
     const record = this.data.records.find((r) => r.threadId === threadId && r.turnId === turnId);
     if (!record) return;
-    if (model.source !== 'rerouted') {
+    const nativeSwitch =
+      model.source === 'cli-message' &&
+      (Boolean(record.models?.length) ||
+        Boolean(record.model && model.model && record.model !== model.model));
+    if (model.source !== 'rerouted' && !nativeSwitch) {
       if (!record.models?.length) {
         record.model = model.model;
         record.effort = model.effort;

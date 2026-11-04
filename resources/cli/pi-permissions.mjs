@@ -9,7 +9,9 @@ export default function athenaPermissions(pi) {
     // No pattern-based dangerous-command heuristic and no persistent "always allow".
     if (ctx.mode !== 'rpc' || !ctx.hasUI || ctx.signal?.aborted)
       return { block: true, reason: 'Athena authorization is unavailable' };
-    const detail = JSON.stringify(event.input).slice(0, 16000);
+    const detail = JSON.stringify(event.input);
+    if (typeof detail !== 'string' || detail.length > 16000)
+      return { block: true, reason: 'Tool arguments exceed the reviewable approval limit' };
     const approved = await ctx.ui.confirm(`Pi · ${event.toolName}`, detail, { signal: ctx.signal });
     if (!approved || ctx.signal?.aborted)
       return { block: true, reason: 'This operation was not approved in Athena' };

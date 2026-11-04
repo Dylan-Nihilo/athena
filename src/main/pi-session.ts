@@ -18,6 +18,7 @@ const text = (value: unknown, limit = 256): value is string =>
   typeof value === 'string' && value.length > 0 && value.length <= limit;
 interface Run {
   id: string;
+  requested?: string;
   resolve(): void;
   reject(error: Error): void;
   text: string;
@@ -157,8 +158,7 @@ export class PiSession implements AgentSession {
       if (!this.permissionReady) throw new Error('Pi 授权扩展未就绪，不能执行任务');
       if (!text(state?.sessionId) || state.isStreaming || state.pendingMessageCount > 0)
         throw new Error('Pi 未返回可用的空闲会话');
-      if (this.options.sessionId && state.sessionId !== this.options.sessionId)
-        throw new Error('Pi 恢复了其他会话，已拒绝使用');
+      if (state.sessionId !== id) throw new Error('Pi 返回了其他会话，已拒绝使用');
       this.id = state.sessionId;
       this.ready = true;
     } catch (error) {
@@ -219,6 +219,7 @@ export class PiSession implements AgentSession {
     const done = new Promise<void>((resolve, reject) => {
       this.active = {
         id: randomUUID(),
+        requested: selection?.model,
         resolve,
         reject,
         text: '',
@@ -365,6 +366,7 @@ export class PiSession implements AgentSession {
           threadId: this.id!,
           turnId: run.id,
           model: {
+            requested: run.requested,
             model: `${record.message.provider}/${record.message.model}`,
             source: 'cli-message',
           },
@@ -373,6 +375,10 @@ export class PiSession implements AgentSession {
     if (record.type === 'message_update' && !run.cancelled) {
       const update = record.assistantMessageEvent;
       if (update?.type === 'text_delta' && typeof update.delta === 'string') {
+        if (run.text.length + update.delta.length > 4 * 1024 * 1024) {
+          this.shutdown('Pi 回复过长，已停止');
+          return;
+        }
         run.messageText += update.delta;
         run.text += update.delta;
         this.emit({ type: 'delta', text: update.delta });
@@ -393,12 +399,20 @@ export class PiSession implements AgentSession {
             .map((part: RecordValue) => part.text)
             .join('')
         : '';
+      if (!full.startsWith(run.messageText)) {
+        this.shutdown('Pi 完整回复与流式输出不一致');
+        return;
+      }
       if (
         full.startsWith(run.messageText) &&
         full.length > run.messageText.length &&
         !run.cancelled
       ) {
         const delta = full.slice(run.messageText.length);
+        if (run.text.length + delta.length > 4 * 1024 * 1024) {
+          this.shutdown('Pi 回复过长，已停止');
+          return;
+        }
         run.text += delta;
         this.emit({ type: 'delta', text: delta });
       }
@@ -530,7 +544,13 @@ export class PiSession implements AgentSession {
   }
   private cancelRequests() {
     for (const id of [...this.requests.keys()]) {
-      if (!this.closed) this.write({ type: 'extension_ui_response', id, cancelled: true });
+      if (!this.closed) {
+        try {
+          this.write({ type: 'extension_ui_response', id, cancelled: true });
+        } catch {
+          /* Broken stdin must not prevent fail-closed cleanup. */
+        }
+      }
       this.removeRequest(id);
     }
   }
@@ -562,10 +582,10 @@ export class PiSession implements AgentSession {
     const child = this.child;
     child?.stdin.end();
     const kill = (signal: NodeJS.Signals) => {
-      if (!child?.pid || child.exitCode !== null || child.signalCode !== null) return;
+      if (!child?.pid) return;
       try {
         if (process.platform !== 'win32') process.kill(-child.pid, signal);
-        else child.kill(signal);
+        else if (child.exitCode === null && child.signalCode === null) child.kill(signal);
       } catch {
         /* Already exited. */
       }
