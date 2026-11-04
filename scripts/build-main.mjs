@@ -7,7 +7,8 @@ export async function buildMain() {
     platform: 'node',
     format: 'cjs',
     target: 'node22',
-    packages: 'external',
+    minify: true,
+    external: ['electron'],
     sourcemap: true,
   });
   await build({
@@ -17,6 +18,7 @@ export async function buildMain() {
     platform: 'node',
     format: 'cjs',
     target: 'node22',
+    minify: true,
     external: ['electron'],
   });
 }
