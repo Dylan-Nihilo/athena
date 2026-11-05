@@ -44,6 +44,7 @@ fixture.late=state=>fixture.emit({type:'onboarding:state',state});
 window.workbench={async invoke(command,payload){
  fixture.calls.push({command,payload});
  if(command==='app:snapshot')return fixture.ready?fixture.getSnapshot():new Promise(resolve=>fixture.pendingSnapshots.push(resolve));
+ if(command==='app:copy'){if(fixture.failCopy)throw new Error('Clipboard unavailable');return true;}
  if(command==='onboarding:open')return fixture.update({status:'in-progress',stage:fixture.mode==='legacy'?'welcome':fixture.state.stage,error:undefined});
  if(command==='onboarding:refresh'){
   if(fixture.state.operation?.kind==='login')return fixture.update({login:{status:'checking'},operation:{...fixture.state.operation,phase:'checking',message:'正在核对登录'}});
@@ -175,6 +176,7 @@ try {
   assert.equal((await calls(page, 'models:list')).length, 0);
   await page.evaluate(() => (window as any).__onboardingFixture.release());
   await expect(current(page).getByRole('heading')).toHaveText('你好，我是 Athena。');
+  await expect(page.getByRole('progressbar', { name: '准备步骤' })).toHaveAttribute('aria-valuenow', '1');
   await expect(page.locator('.app-workbench')).toHaveCount(0);
   for (const key of ['n', 'l', 't', 'w', 'k', 'b'])
     await page.evaluate(
@@ -310,7 +312,7 @@ try {
   await page.getByRole('button', { name: '我已完成，检查连接', exact: true }).click();
   await expect(current(page)).toContainText('正在确认连接。');
   assert.equal(await current(page).getByText('已连接', { exact: true }).count(), 0);
-  const later = page.getByRole('button', { name: '稍后设置', exact: true });
+  const later = page.getByRole('button', { name: '跳过设置', exact: true });
   await later.focus();
   await update(page, {
     operation: undefined,
@@ -319,7 +321,7 @@ try {
     stage: 'workspace',
   });
   await expect(current(page)).toContainText('连接好了。');
-  await expect(page.locator('.onboarding-progress [aria-current="step"]')).toHaveText('连接');
+  await expect(page.getByRole('progressbar', { name: '准备步骤' })).toHaveAttribute('aria-valuetext', '第 2 步，共 4 步：连接');
   await expect(later).toBeFocused();
   await page.getByRole('button', { name: '查看连接详情', exact: true }).click();
   await expect(current(page)).toContainText('/fixture/codex');
@@ -493,7 +495,7 @@ try {
       },
     });
   });
-  await legacy.getByRole('button', { name: '稍后设置', exact: true }).click();
+  await legacy.getByRole('button', { name: '跳过设置', exact: true }).click();
   await expect(legacy.locator('.onboarding')).toHaveCount(0);
   await expect(legacy.locator('.settings-workspace')).toBeVisible();
   await legacy.getByRole('button', { name: '返回对话', exact: true }).click();
@@ -563,7 +565,7 @@ try {
     .fill('项目 A 未提交的元素文字');
   await transfer.locator('.sidebar-settings').click();
   await transfer.getByRole('button', { name: '重新查看引导', exact: true }).click();
-  await transfer.getByRole('button', { name: '稍后设置', exact: true }).click();
+  await transfer.getByRole('button', { name: '跳过设置', exact: true }).click();
   await transfer.getByRole('button', { name: '返回对话', exact: true }).click();
   await expect(transferDraft).toHaveValue('项目 A 的任务草稿');
   await expect(transfer.locator('.selected-context')).toContainText('项目 A 按钮');
@@ -649,6 +651,130 @@ try {
     'Deferred fresh setup is non-blocking to the workbench but cannot send before core readiness; Continue reopens the actual preparation flow',
   );
   await deferred.close();
+
+  const cursor = await createPage();
+  await cursor.evaluate(() => (window as any).__onboardingFixture.release());
+  await cursor.getByRole('button', { name: '你好，Athena', exact: true }).click();
+  await cursor.getByRole('button', { name: '检查本机 Codex', exact: true }).click();
+  const cursorInfo = {
+    id: 'cursor',
+    name: 'Cursor Agent',
+    available: true,
+    supported: true,
+    authentication: 'missing',
+    path: '/fixture/Cursor Agent/bin/cursor-agent',
+  };
+  const cursorLogin = "'/fixture/Cursor Agent/bin/cursor-agent' login";
+  await update(cursor, {
+    operation: undefined,
+    selectedAgent: 'cursor',
+    executor: cursorInfo,
+    agents: [cursorInfo],
+  });
+  await expect(current(cursor).locator('.onboarding-status-indicator')).toHaveText([
+    '已安装',
+    '未登录',
+  ]);
+  await expect(current(cursor).locator('.onboarding-status-indicator svg')).toHaveCount(2);
+  await expect(current(cursor).locator('.onboarding-login-steps > li')).toHaveCount(3);
+  await expect(current(cursor).locator('.onboarding-login-steps > li').first().locator('code')).toHaveText(cursorLogin);
+  await expect(current(cursor).locator('.onboarding-command-header')).toContainText('Shell');
+  await expect(current(cursor).locator('.onboarding-status-icon > svg')).toHaveCount(1);
+  await expect(current(cursor).locator('.onboarding-status-icon > img')).toHaveCount(0);
+  await expect(cursor.getByRole('progressbar', { name: '准备步骤' })).toHaveAttribute('aria-valuenow', '2');
+  await expect(cursor.getByRole('progressbar', { name: '准备步骤' })).toHaveAttribute('aria-valuetext', '第 2 步，共 4 步：连接');
+  await expect(cursor.locator('.onboarding-step-number')).toHaveCount(0);
+  await expect(cursor.locator('.onboarding-footer ol')).toHaveCount(0);
+  await expect(current(cursor)).toContainText('打开 macOS「终端」');
+  await expect(current(cursor).locator('code')).toHaveText(cursorLogin);
+  await expect(current(cursor)).toContainText('在打开的网页中完成登录授权');
+  const copyIconButton = current(cursor).getByRole('button', { name: '复制登录命令', exact: true });
+  await expect(copyIconButton).toHaveText('');
+  await expect(copyIconButton.locator('svg')).toHaveCount(1);
+  await cursor.evaluate(() => ((window as any).__onboardingFixture.failCopy = true));
+  await current(cursor).getByRole('button', { name: '复制登录命令', exact: true }).click();
+  await expect(current(cursor).getByRole('alert')).toHaveText(
+    '复制失败，请手动选择并复制上方命令。',
+  );
+  await expect(current(cursor).getByRole('button', { name: '已复制', exact: true })).toHaveCount(0);
+  await cursor.evaluate(() => ((window as any).__onboardingFixture.failCopy = false));
+  const copyLogin = current(cursor).getByRole('button', { name: '复制登录命令', exact: true });
+  await copyLogin.focus();
+  await copyLogin.press('Enter');
+  await expect(current(cursor).getByRole('button', { name: '已复制', exact: true })).toBeVisible();
+  await expect(current(cursor).getByRole('alert')).toHaveCount(0);
+  assert.deepEqual((await calls(cursor, 'app:copy')).at(-1).payload, { text: cursorLogin });
+  assert.equal((await calls(cursor, 'onboarding:login/start')).length, 0);
+  await cursor.screenshot({ path: path.join(output, 'cursor-login.png') });
+  await cursor.setViewportSize({ width: 1060, height: 760 });
+  const commandFits = await current(cursor)
+    .locator('.onboarding-login-command')
+    .evaluate((node) => node.scrollWidth <= node.clientWidth);
+  assert.equal(commandFits, true, 'Login command must wrap within the minimum app width');
+  await expect(cursor.locator('.onboarding-top-progress')).toBeInViewport();
+  const skipSetup = cursor.getByRole('button', { name: '跳过设置', exact: true });
+  await expect(skipSetup).toBeInViewport();
+  const skipStyle = await skipSetup.evaluate((node) => ({
+    background: getComputedStyle(node).backgroundColor,
+    height: node.getBoundingClientRect().height,
+  }));
+  assert.notEqual(skipStyle.background, 'rgba(0, 0, 0, 0)', 'Skip must have a visible button surface');
+  assert.ok(skipStyle.height >= 44);
+  await expect(current(cursor).getByRole('button', { name: '已复制', exact: true })).toBeInViewport();
+  await cursor.screenshot({ path: path.join(output, 'cursor-login-1060.png') });
+  await update(cursor, {
+    executor: { ...cursorInfo, path: "/fixture/Provenr's Cursor/bin/cursor-agent" },
+  });
+  await expect(current(cursor).locator('code')).toHaveText(
+    "'/fixture/Provenr'\\''s Cursor/bin/cursor-agent' login",
+  );
+  await expect(current(cursor).getByRole('button', { name: '复制登录命令', exact: true })).toBeVisible();
+  await current(cursor)
+    .getByRole('button', { name: '我已登录，重新检查', exact: true })
+    .click();
+  await update(cursor, { operation: undefined });
+  await expect(current(cursor).locator('.onboarding-status-indicator')).toHaveText([
+    '已安装',
+    '未登录',
+  ]);
+  await expect(current(cursor).getByRole('heading')).toHaveText('连接 Cursor Agent。');
+  await update(cursor, { executor: { ...cursorInfo, authentication: 'ready' } });
+  await expect(current(cursor)).toContainText('已登录');
+  await expect(current(cursor).getByRole('heading')).toHaveText('已找到本机 Cursor Agent。');
+  await expect(current(cursor).getByRole('button', { name: '复制登录命令' })).toHaveCount(0);
+  await expect(cursor.locator('.is-history .onboarding-actions')).toHaveCount(0);
+  checks.push(
+    'Cursor login distinguishes installation from authentication, shows and copies a shell-quoted command without executing it, and advances only after host authentication succeeds',
+  );
+  await cursor.close();
+
+  const darkCursor = await createPage('fresh', true);
+  await darkCursor.evaluate(() => (window as any).__onboardingFixture.release());
+  await darkCursor.getByRole('button', { name: '你好，Athena', exact: true }).click();
+  await darkCursor.getByRole('button', { name: '检查本机 Codex', exact: true }).click();
+  await update(darkCursor, {
+    operation: undefined,
+    selectedAgent: 'cursor',
+    executor: { ...cursorInfo, path: undefined },
+    agents: [cursorInfo],
+  });
+  await expect(darkCursor.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(current(darkCursor).locator('code')).toHaveText('cursor-agent login');
+  await darkCursor.screenshot({ path: path.join(output, 'cursor-login-dark.png') });
+  checks.push('Cursor login supports dark mode and falls back to cursor-agent when no path is supplied');
+  await darkCursor.getByRole('button', { name: '跳过设置', exact: true }).click();
+  await expect(darkCursor.locator('.onboarding')).toHaveCount(0);
+  await expect(darkCursor.getByRole('button', { name: '继续准备', exact: true })).toBeVisible();
+  await darkCursor.getByRole('textbox', { name: '发送给 Agent 的任务' }).fill('登录后再发送');
+  await expect(darkCursor.getByRole('button', { name: '发送任务', exact: true })).toBeDisabled();
+  const deferredCursor = await darkCursor.evaluate(() => (window as any).__onboardingFixture.state);
+  assert.equal(deferredCursor.status, 'deferred');
+  assert.equal(deferredCursor.selectedAgent, 'cursor');
+  assert.equal(deferredCursor.executor.authentication, 'missing');
+  assert.equal((await calls(darkCursor, 'onboarding:defer')).length, 1);
+  assert.equal((await calls(darkCursor, 'conversation:send')).length, 0);
+  checks.push('Skip exits setup without inventing login success, preserves the selected CLI, and keeps sending disabled until readiness is verified');
+  await darkCursor.close();
 
   assert.deepEqual(errors, []);
   await writeFile(
