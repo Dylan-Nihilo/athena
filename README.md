@@ -80,6 +80,7 @@
 | [页面协作](docs/shared-workspace.md) · 邀请、权限与控制权   | [工程约定](AGENTS.md) · 开发与验证规则                             |
 | [飞书连接](docs/feishu-setup.md) · 配对与连接恢复           | [Computer Use 交接](docs/computer-use-handoff.md) · 实现与研究边界 |
 | [模型与用量](docs/agent-experience.md) · 执行证据与统计口径 | [更新日志](CHANGELOG.md) · 版本变化与下载                          |
+|                                                             | [贡献指南](CONTRIBUTING.md) · 问题反馈、开发与 Pull Request        |
 
 <details>
 <summary><strong>从源码开发</strong></summary>
