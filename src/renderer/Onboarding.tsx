@@ -1,15 +1,22 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Button, Card } from '@heroui/react';
 import { LayoutGroup, motion, useReducedMotion } from 'motion/react';
-import { ArrowDown02Icon, Loading02Icon } from '@hugeicons-pro/core-stroke-rounded';
-import { Icon } from './ui';
+import {
+  AlertCircleIcon,
+  ArrowDown02Icon,
+  CheckmarkCircle02Icon,
+  CommandLineIcon,
+  CopyIcon,
+  Download04Icon,
+  Folder01Icon,
+  Globe02Icon,
+  InformationCircleIcon,
+  Loading02Icon,
+  Tick02Icon,
+} from '@hugeicons-pro/core-stroke-rounded';
+import { ActionButton, Icon } from './ui';
 import { ChoiceSelect } from './ChoiceSelect';
 import athenaLogo from './assets/brand/athena-profile.png';
-import downloadIcon from './assets/onboarding/download.svg';
-import infoIcon from './assets/onboarding/info.svg';
-import terminalIcon from './assets/onboarding/terminal.svg';
-import folderIcon from './assets/onboarding/folder.svg';
-import globeIcon from './assets/onboarding/globe.svg';
 import type {
   OnboardingCommandPayloads,
   OnboardingInstallPlan,
@@ -60,6 +67,7 @@ type StatusCard = {
   title: string;
   detail?: string;
   label?: string;
+  indicators?: Array<{ label: string; ready: boolean }>;
 };
 type AssistantEntry = {
   id: string;
@@ -78,12 +86,13 @@ type Action = {
 };
 
 const icons = {
-  download: downloadIcon,
-  info: infoIcon,
-  terminal: terminalIcon,
-  folder: folderIcon,
-  globe: globeIcon,
+  download: Download04Icon,
+  info: InformationCircleIcon,
+  terminal: CommandLineIcon,
+  folder: Folder01Icon,
+  globe: Globe02Icon,
 };
+const setupSteps = ['认识', '连接', '工作区', '开始'] as const;
 const easing = [0.22, 1, 0.36, 1] as const;
 const pendingScreens = new Set<Screen>([
   'detecting',
@@ -105,6 +114,63 @@ const cleanError = (error: unknown) =>
     /^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/,
     '',
   );
+
+function LoginCommand({
+  command,
+  active,
+  disabled,
+}: {
+  command: string;
+  active: boolean;
+  disabled: boolean;
+}) {
+  const [status, setStatus] = useState<'idle' | 'copying' | 'copied' | 'error'>('idle');
+  return (
+    <div className="onboarding-login-command">
+      <div className="onboarding-command-header">
+        <span className="onboarding-command-language">
+          <Icon icon={CommandLineIcon} size={15} />
+          Shell
+        </span>
+        <span className="onboarding-command-caption">登录命令</span>
+        {active && (
+          <ActionButton
+            className="onboarding-copy-command"
+            isIconOnly
+            aria-label={
+              status === 'copied' ? '已复制' : status === 'copying' ? '正在复制…' : '复制登录命令'
+            }
+            isDisabled={disabled || status === 'copying'}
+            onPress={async () => {
+              setStatus('copying');
+              try {
+                const copied = await window.workbench.invoke<boolean>('app:copy', { text: command });
+                setStatus(copied ? 'copied' : 'error');
+              } catch {
+                setStatus('error');
+              }
+            }}
+          >
+            <Icon
+              icon={status === 'copied' ? Tick02Icon : status === 'copying' ? Loading02Icon : CopyIcon}
+              size={16}
+              className={status === 'copying' ? 'spin' : undefined}
+            />
+          </ActionButton>
+        )}
+      </div>
+      <div className="onboarding-login-command-row">
+        <span className="onboarding-command-prompt" aria-hidden="true">$</span>
+        <code>{command}</code>
+      </div>
+      {active && status === 'error' && (
+        <p className="onboarding-error" role="alert">
+          复制失败，请手动选择并复制上方命令。
+        </p>
+      )}
+    </div>
+  );
+}
 
 function screenForState(state: OnboardingState, intent: Intent): Screen {
   if (state.operation) {
@@ -159,6 +225,7 @@ function content(
   cards?: StatusCard[];
   note?: string;
   plan?: OnboardingInstallPlan;
+  loginCommand?: string;
 } {
   const operation = state.operation;
   const pendingCard: StatusCard = {
@@ -179,15 +246,33 @@ function content(
     title: external ? name : 'Codex',
     detail: external ? state.executor?.path : state.codex.path || state.codex.version,
     label: external
-      ? state.executor?.available
-        ? '已检测'
-        : '未就绪'
+      ? !state.executor?.available
+        ? '未就绪'
+        : state.executor.authentication === 'missing'
+          ? '已安装 · 未登录'
+          : state.executor.authentication === 'ready'
+            ? '已登录'
+            : '已安装 · 登录待核对'
       : state.codex.status === 'ready' && state.codex.authentication === 'ready'
         ? '已连接'
         : state.codex.status === 'missing'
           ? '未安装'
           : '待核对',
   };
+  if (external && state.executor?.available) {
+    connection.indicators = [
+      { label: '已安装', ready: true },
+      {
+        label:
+          state.executor.authentication === 'ready'
+            ? '已登录'
+            : state.executor.authentication === 'missing'
+              ? '未登录'
+              : '登录待核对',
+        ready: state.executor.authentication === 'ready',
+      },
+    ];
+  }
   const directory: StatusCard = {
     icon: 'folder',
     title: basename(state.workspace.candidate?.path || state.workspace.path),
@@ -217,12 +302,25 @@ function content(
         lines: ['请在终端检查安装，或选择其他已安装的 CLI，然后重新检查。'],
         cards: [connection],
       };
-    if (screen.startsWith('login'))
+    if (screen.startsWith('login')) {
+      if (state.selectedAgent === 'cursor') {
+        const executable = state.executor?.path || 'cursor-agent';
+        const quoted = /^[A-Za-z0-9_./-]+$/.test(executable)
+          ? executable
+          : `'${executable.replaceAll("'", "'\\''")}'`;
+        return {
+          title: `连接 ${name}。`,
+          lines: ['安装已就绪，接下来连接你的 Cursor 账号。'],
+          cards: [connection],
+          loginCommand: `${quoted} login`,
+        };
+      }
       return {
         title: `连接 ${name}。`,
         lines: ['请在终端完成登录，然后重新检查。'],
         cards: [connection],
       };
+    }
     if (screen === 'detecting')
       return {
         title: '我来看看。',
@@ -798,7 +896,15 @@ export function Onboarding({
       state.selectedAgent !== 'codex' &&
       ['missing', 'login', 'loginWait'].includes(current.screen)
     )
-      return [check];
+      return [
+        {
+          ...check,
+          label:
+            state.selectedAgent === 'cursor' && current.screen !== 'missing'
+              ? '我已登录，重新检查'
+              : check.label,
+        },
+      ];
     switch (current.screen) {
       case 'welcome':
         return [
@@ -1024,6 +1130,22 @@ export function Onboarding({
       <header className="onboarding-topbar window-drag">
         <strong>Athena</strong>
         <span>{initial ? '初次见面' : '继续准备'}</span>
+        <div className="onboarding-top-progress">
+          <span>第 {stage + 1} / {setupSteps.length} 步 · {setupSteps[stage]}</span>
+          <div
+            className="onboarding-progress-track"
+            role="progressbar"
+            aria-label="准备步骤"
+            aria-valuemin={1}
+            aria-valuemax={setupSteps.length}
+            aria-valuenow={stage + 1}
+            aria-valuetext={`第 ${stage + 1} 步，共 ${setupSteps.length} 步：${setupSteps[stage]}`}
+          >
+            {setupSteps.map((label, index) => (
+              <span key={label} data-active={index === stage} data-complete={index < stage} />
+            ))}
+          </div>
+        </div>
       </header>
       <motion.div
         layoutScroll
@@ -1115,7 +1237,7 @@ export function Onboarding({
                                     className={active ? 'spin' : undefined}
                                   />
                                 ) : (
-                                  <img src={icons[card.icon]} alt="" />
+                                  <Icon icon={icons[card.icon]} size={22} />
                                 )}
                               </span>
                               <div className="onboarding-status-copy">
@@ -1123,12 +1245,59 @@ export function Onboarding({
                                 {card.detail && <span>{card.detail}</span>}
                               </div>
                               {card.label && (
-                                <span className="onboarding-status-label">{card.label}</span>
+                                <span className="onboarding-status-label">
+                                  {card.indicators
+                                    ? card.indicators.map((indicator) => (
+                                        <span
+                                          key={indicator.label}
+                                          className="onboarding-status-indicator"
+                                          data-state={indicator.ready ? 'ready' : 'pending'}
+                                        >
+                                          <Icon
+                                            icon={indicator.ready ? CheckmarkCircle02Icon : AlertCircleIcon}
+                                            size={14}
+                                          />
+                                          {indicator.label}
+                                        </span>
+                                      ))
+                                    : card.label}
+                                </span>
                               )}
                             </Card.Content>
                           </Card>
                         ))}
                       </div>
+                    )}
+                    {view.loginCommand && (
+                      <ol className="onboarding-login-steps">
+                        <li>
+                          <span className="onboarding-login-step-number" aria-hidden="true">1</span>
+                          <div>
+                            <strong>在终端运行登录命令</strong>
+                            <p>打开 macOS「终端」，粘贴下方命令并按回车。</p>
+                            <LoginCommand
+                              key={view.loginCommand}
+                              command={view.loginCommand}
+                              active={active}
+                              disabled={leaving || requestPending || Boolean(state.operation)}
+                            />
+                          </div>
+                        </li>
+                        <li>
+                          <span className="onboarding-login-step-number" aria-hidden="true">2</span>
+                          <div>
+                            <strong>完成账号授权</strong>
+                            <p>在打开的网页中完成登录授权，然后回到 Athena。</p>
+                          </div>
+                        </li>
+                        <li>
+                          <span className="onboarding-login-step-number" aria-hidden="true">3</span>
+                          <div>
+                            <strong>检查登录结果</strong>
+                            <p>点击「我已登录，重新检查」，确认连接后继续。</p>
+                          </div>
+                        </li>
+                      </ol>
                     )}
                     {view.plan && (
                       <dl className="onboarding-plan-details">
@@ -1218,26 +1387,15 @@ export function Onboarding({
         </Button>
       )}
       <footer className="onboarding-footer">
-        <ol className="onboarding-progress" aria-label="准备进度">
-          {['认识', '连接', '工作区', '开始'].map((label, index) => (
-            <li
-              key={label}
-              data-active={index === stage}
-              data-complete={index < stage}
-              aria-current={index === stage ? 'step' : undefined}
-            >
-              {label}
-            </li>
-          ))}
-        </ol>
         <Button
-          variant="ghost"
+          className="onboarding-skip-setup"
+          variant="secondary"
           isDisabled={leaving || (requestPending && intent.current === 'defer')}
           onPress={() =>
             void run(
               'onboarding:defer',
               undefined,
-              '稍后设置',
+              '跳过设置',
               current.screen,
               'defer',
               undefined,
@@ -1245,7 +1403,7 @@ export function Onboarding({
             )
           }
         >
-          稍后设置
+          跳过设置
         </Button>
       </footer>
       <p className="sr-only" role="status" aria-live="polite">
