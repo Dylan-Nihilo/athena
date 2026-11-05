@@ -16,6 +16,8 @@
     "test": "tsx --test tests/*.test.ts",
     "test:e2e": "tsx tests/electron.e2e.ts",
     "test:live-agent": "tsx tests/live-agent.e2e.ts",
+    "test:live-pi": "tsx tests/pi-live.e2e.ts",
+    "test:live-cli": "tsx tests/stream-cli-live.e2e.ts",
     "setup:browseros": "node scripts/setup-browseros.mjs",
     "package": "npm run build && electron-builder --mac dir",
     "heroui:setup": "node scripts/setup-heroui-pro.mjs",

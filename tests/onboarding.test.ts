@@ -6,6 +6,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { nodeShebang } from './node-script';
 import { OnboardingRuntime, managedCodexPath } from '../src/main/onboarding';
 import { Store } from '../src/main/store';
 import { detectAgents } from '../src/main/agents';
@@ -139,7 +140,7 @@ async function archive(f: Awaited<ReturnType<typeof fixture>>) {
   const executed = path.join(f.directory, 'version-executed');
   await writeFile(
     path.join(root, 'bin/codex'),
-    `#!${process.execPath}\nrequire('node:fs').writeFileSync(${JSON.stringify(executed)},'yes');console.log('codex-cli 0.166.0');\n`,
+    `${nodeShebang()}\nrequire('node:fs').writeFileSync(${JSON.stringify(executed)},'yes');console.log('codex-cli 0.166.0');\n`,
   );
   await writeFile(path.join(root, 'bin/codex-code-mode-host'), '#!/bin/sh\nexit 0\n');
   await writeFile(path.join(root, 'codex-path/rg'), '#!/bin/sh\nexit 0\n');
@@ -431,7 +432,7 @@ async function loginFixture(authentication: AgentInfo['authentication'] = 'missi
     auth = path.join(f.directory, 'login.auth');
   await writeFile(
     binary,
-    `#!${process.execPath}\nconst fs=require('node:fs');fs.writeFileSync(${JSON.stringify(pid)},String(process.pid));console.error('https://auth.openai.com/oauth/authorize?state=private-fixture-state');const timer=setInterval(()=>{if(fs.existsSync(${JSON.stringify(finish)})){fs.writeFileSync(${JSON.stringify(auth)},'ready');process.exit(0)}},10);process.on('SIGTERM',()=>{clearInterval(timer);setTimeout(()=>{console.error('https://auth.openai.com/late?state=old');process.exit(0)},20)});\n`,
+    `${nodeShebang()}\nconst fs=require('node:fs');fs.writeFileSync(${JSON.stringify(pid)},String(process.pid));console.error('https://auth.openai.com/oauth/authorize?state=private-fixture-state');const timer=setInterval(()=>{if(fs.existsSync(${JSON.stringify(finish)})){fs.writeFileSync(${JSON.stringify(auth)},'ready');process.exit(0)}},10);process.on('SIGTERM',()=>{clearInterval(timer);setTimeout(()=>{console.error('https://auth.openai.com/late?state=old');process.exit(0)},20)});\n`,
   );
   await chmod(binary, 0o755);
   f.data.agents = ready(binary, authentication);
@@ -574,13 +575,13 @@ test('the private CLI fallback requires a successful login-status exit before re
   try {
     for (const name of ['codex', 'claude', 'opencode', 'gemini']) {
       const file = path.join(directory, name);
-      await writeFile(file, `#!${process.execPath}\nprocess.exit(1);\n`);
+      await writeFile(file, `${nodeShebang()}\nprocess.exit(1);\n`);
       await chmod(file, 0o755);
     }
     const fallback = path.join(directory, 'private-codex');
     await writeFile(
       fallback,
-      `#!${process.execPath}\nif(process.argv.includes('--version')){console.log('codex-cli 0.166.0');process.exit(0)}console.error('Logged in using ChatGPT, but status validation failed');process.exit(1);\n`,
+      `${nodeShebang()}\nif(process.argv.includes('--version')){console.log('codex-cli 0.166.0');process.exit(0)}console.error('Logged in using ChatGPT, but status validation failed');process.exit(1);\n`,
     );
     await chmod(fallback, 0o755);
     process.env.PATH = directory;

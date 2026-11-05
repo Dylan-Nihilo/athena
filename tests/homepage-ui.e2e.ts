@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { uiBrowserExecutable } from './ui-browser';
 import { chromium, expect } from '@playwright/test';
 import { checkTaskPanels } from './task-panel-checks';
 import { checkAppNotices } from './app-notice-checks';
@@ -109,7 +110,7 @@ window.workbench={
   if(action==='codex:update-status')return fixture.updateStatus || {status:'unknown'};
   if(action==='models:list')return [{model:'fixture-model',name:${JSON.stringify(longModelName)},efforts:[{id:'low',description:'Low'},{id:'high',description:'High'}],defaultEffort:'low'}];
   if(action==='conversation:prepare')return {status:'ready',conversationId:payload.conversationId};
-  if(action==='conversation:new'){const item={id:'new-'+fixture.calls.length,title:'新对话',updatedAt:Date.now(),workspace:fixture.snapshot.settings.workspace,messages:[]};fixture.snapshot.conversations.unshift(item);return item;}
+  if(action==='conversation:new'){const item={id:'new-'+fixture.calls.length,title:'新对话',updatedAt:Date.now(),workspace:fixture.snapshot.settings.workspace,agent:payload?.agent||fixture.snapshot.settings.agent,messages:[]};fixture.snapshot.conversations.unshift(item);return item;}
   if(action==='conversation:send'){
    if(fixture.failSend)throw new Error('测试发送失败，请稍后重试。');
    const item=fixture.snapshot.conversations.find(c=>c.id===payload.id);
@@ -121,7 +122,21 @@ window.workbench={
   if(action==='conversation:stop'){for(const item of fixture.snapshot.conversations){for(const message of item.messages)if(message.status==='streaming')message.status='done';fixture.emit({type:'conversation:updated',conversation:structuredClone(item)})}return true;}
   if(action==='settings:workspace'){if(!fixture.folderChoice)return null;fixture.snapshot.settings.workspace=fixture.folderChoice;return structuredClone(fixture.snapshot.settings);}
   if(action==='settings:agent'){fixture.snapshot.settings.agent=payload.id;return structuredClone(fixture.snapshot.settings);}
-  if(action==='settings:model'){fixture.snapshot.settings.modelSelection=payload;return structuredClone(fixture.snapshot.settings);}
+  if(action==='settings:model'){
+    const selection={model:payload.model,effort:payload.effort};
+    if(payload.conversationId!==undefined){
+      const conversation=fixture.snapshot.conversations.find(item=>item.id===payload.conversationId);
+      if(!conversation||payload.agent!==(conversation.agent||'codex'))throw Error('CLI 已改变');
+      conversation.modelSelection=selection;
+      fixture.emit({type:'conversation:updated',conversation});
+    }else{
+      const agent=payload.agent||fixture.snapshot.settings.agent;
+      fixture.snapshot.settings.modelSelections??={};
+      fixture.snapshot.settings.modelSelections[agent]=selection;
+      if(agent==='codex')fixture.snapshot.settings.modelSelection=selection;
+    }
+    return structuredClone(fixture.snapshot.settings);
+  }
   if(action==='agents:refresh')return fixture.snapshot.agents;
   if(action==='browser:inspect'){fixture.browser({inspecting:payload.enabled});return true;}
   if(action==='recording:start'){fixture.browser({recording:true});return true;}
@@ -180,9 +195,7 @@ const server = await createServer({
 await server.listen();
 const port = (server.httpServer!.address() as { port: number }).port;
 const browser = await chromium.launch({
-  executablePath: path.resolve(
-    '../browseros-runtime/BrowserOS neo.app/Contents/MacOS/BrowserOS neo',
-  ),
+  executablePath: uiBrowserExecutable(),
   headless: true,
   args: [
     '--disable-browseros-server',
@@ -597,10 +610,15 @@ try {
     });
   });
   const agentPicker = page.getByRole('button', { name: '选择 Agent', exact: true });
+  const defaultChanges = (await calls('settings:agent')).length;
   await agentPicker.click();
   await page.getByRole('menuitem', { name: /^Codex/ }).click();
   await expect(agentPicker).toBeFocused();
-  assert.equal((await calls('settings:agent')).at(-1)?.payload.id, 'codex');
+  assert.equal(
+    (await calls('settings:agent')).length,
+    defaultChanges,
+    'Reselecting the conversation CLI does not change the application default',
+  );
   const agentOutline = await outline();
   const modelPicker = page.getByRole('button', { name: '选择模型', exact: true });
   await modelPicker.click();
@@ -613,6 +631,10 @@ try {
     .toEqual({
       model: 'fixture-model',
       effort: 'high',
+      agent: 'codex',
+      conversationId: await page.evaluate(
+        () => (window as any).__homeFixture.snapshot.conversations[0].id,
+      ),
     });
   await page.screenshot({ path: path.join(output, 'composer-model-controls.png') });
   await page.getByRole('button', { name: '关闭模型选择' }).click();

@@ -39,7 +39,7 @@ npm start
 npm run package
 ```
 
-- 安装依赖前设置环境变量 `HUGEICONS_NPM_TOKEN`，供 `@hugeicons-pro` 的 CollectUI 私服鉴权。
+- HugeIcons Pro 的 CollectUI 鉴权配置在用户级 `~/.npmrc` 或 CI 临时用户配置中；仓库 `.npmrc` 只保留 registry，不放 Token 或仓库级鉴权占位。
 - `npm ci` 的 postinstall 会执行 `heroui:setup`。安装脚本不自动读取 `.env`，密钥通过环境配置。
 - `setup:browseros` 获取并校验官方固定版本，不启动浏览器或覆盖已有不同安装。
 - `package` 生成本机应用目录；当前项目使用 ad-hoc 签名，未配置 Developer ID 分发签名、公证或自动更新。不要把项目配置写成“系统找不到证书”。
@@ -61,7 +61,7 @@ npm run package
 
 ## 执行与共享边界
 
-- 当前只有 Codex 任务执行器；其他 CLI 的安装检测不等于执行支持。通用 MCP 管理、多 Agent 调度和账户/订阅服务尚未实现。
+- CLI 能力与验收层级见 [本机 CLI 适配](docs/mainstream-cli-support.md)。默认 CLI 只影响新对话，旧对话缺少 agent 字段时按 Codex 处理，不迁移原始会话或静默切换。安装检测不等于登录或真实执行已验证；浏览器工具目前仅向 Codex 开放。通用 MCP 管理、多 Agent 调度和账户/订阅服务尚未实现。
 - 内部 Neo MCP 网页工具链不等于任意第三方 MCP 接入，也不代表 Mac 桌面控制能力。
 - 模型选择与实际本轮配置分别验证；不能用上一轮记录或模型自述证明当前模型。
 - 网页操作遵循观察、执行、读取结果、核对；失败或结果未知时先重新观察和核对，不能盲目重放。

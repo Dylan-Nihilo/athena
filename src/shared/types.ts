@@ -1,5 +1,5 @@
 import type { ElementControlSurface } from './element-controls';
-export type AgentId = 'codex' | 'claude' | 'opencode' | 'gemini';
+export type AgentId = 'codex' | 'claude' | 'opencode' | 'gemini' | 'pi' | 'cursor';
 export interface AgentInfo {
   id: AgentId;
   name: string;
@@ -435,6 +435,9 @@ export interface Conversation {
   title: string;
   updatedAt: number;
   messages: ChatMessage[];
+  /** Missing on legacy conversations means Codex, never the current default. */
+  agent?: AgentId;
+  modelSelection?: import('./usage').ModelSelection;
   agentSessionId?: string;
   agentToolsFingerprint?: string;
   previousAgentSessionIds?: string[];
@@ -466,6 +469,7 @@ export interface Settings {
   browserPath?: string;
   agent: AgentId;
   modelSelection?: import('./usage').ModelSelection;
+  modelSelections?: Partial<Record<AgentId, import('./usage').ModelSelection>>;
 }
 export interface CodexConnectionState {
   status: 'idle' | 'starting' | 'ready' | 'error';

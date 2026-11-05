@@ -172,14 +172,23 @@ export class OnboardingRuntime {
     );
   }
   private publish() {
-    this.state.coreReady =
-      this.state.codex.status === 'ready' &&
-      this.state.codex.authentication === 'ready' &&
-      this.state.workspace.status === 'ready';
+    const selected = this.options.settings().agent;
+    this.state.selectedAgent = selected;
+    const cliReady =
+      selected === 'codex'
+        ? this.state.codex.status === 'ready' && this.state.codex.authentication === 'ready'
+        : this.state.executor?.id === selected &&
+          this.state.executor.available &&
+          this.state.executor.supported &&
+          this.state.executor.authentication !== 'missing';
+    this.state.coreReady = Boolean(cliReady && this.state.workspace.status === 'ready');
     this.state.revision++;
     if (!this.disposed) this.options.onState(this.getState());
   }
   private acceptAgents(agents: AgentInfo[]) {
+    this.state.selectedAgent = this.options.settings().agent;
+    this.state.agents = structuredClone(agents);
+    this.state.executor = agents.find((item) => item.id === this.options.settings().agent);
     const codex = agents.find((item) => item.id === 'codex');
     this.state.codex = {
       status: codex?.available && codex.supported ? 'ready' : codex?.path ? 'error' : 'missing',
@@ -323,8 +332,14 @@ export class OnboardingRuntime {
     this.publish();
   }
   private nextStage() {
-    if (this.state.codex.status !== 'ready') return 'codex' as const;
-    if (this.state.codex.authentication !== 'ready') return 'login' as const;
+    if (this.options.settings().agent === 'codex') {
+      if (this.state.codex.status !== 'ready') return 'codex' as const;
+      if (this.state.codex.authentication !== 'ready') return 'login' as const;
+    } else {
+      if (!this.state.executor?.available || !this.state.executor.supported)
+        return 'codex' as const;
+      if (this.state.executor.authentication === 'missing') return 'login' as const;
+    }
     if (this.state.workspace.status !== 'ready') return 'workspace' as const;
     return this.state.browser.status === 'ready' ? ('ready' as const) : ('browser' as const);
   }
@@ -390,7 +405,7 @@ export class OnboardingRuntime {
       'refresh',
       'detect',
       'checking',
-      '正在检查本机 Codex 与已确认的目录…',
+      '正在检查本机 CLI 与已确认的目录…',
       async (context) => {
         await this.probe(context);
         this.state.stage = this.nextStage();
@@ -975,7 +990,7 @@ export class OnboardingRuntime {
       async (context) => {
         await this.probe(context);
         if (!this.state.coreReady)
-          throw new Error('Codex 登录或工作目录尚未就绪，请完成准备或选择稍后设置');
+          throw new Error('所选 CLI 或工作目录尚未就绪，请完成准备或选择稍后设置');
         const browserDeferred = !this.options.browserReady();
         const progress: OnboardingProgress = {
           version: 1,

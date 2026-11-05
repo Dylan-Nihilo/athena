@@ -50,16 +50,16 @@
 
 交互控件以 HeroUI Pro 为基准。有等价 Pro 控件时直接使用；业务专用控件组合 Pro 的原生 slots 和 HeroUI 基础组件。保留组件自带的按压、键盘、焦点、展开和禁用反馈。以下版本来自当前 [package.json](package.json)，精确安装结果以 `package-lock.json` 为准。
 
-| 依赖                              | 当前声明        |
-| --------------------------------- | --------------- |
-| `@heroui/react`、`@heroui/styles` | `3.2.7`         |
-| `@heroui-pro/react`               | `1.0.0-beta.10` |
-| React、React DOM                  | `^19.3.1`       |
-| Tailwind CSS / Vite 插件          | `4.3.3`         |
-| React Aria Components             | `1.22.1`        |
-| Motion                            | `14.9.0`        |
+| 依赖                                 | 当前声明        |
+| ------------------------------------ | --------------- |
+| `@heroui/react`、`@heroui/styles`    | `3.2.7`         |
+| `@heroui-pro/react`                  | `1.0.0-beta.10` |
+| React、React DOM                     | `^19.3.1`       |
+| Tailwind CSS / Vite 插件             | `4.3.3`         |
+| React Aria Components                | `1.22.1`        |
+| Motion                               | `14.9.0`        |
 | `@hugeicons-pro/core-stroke-rounded` | `4.4.0`         |
-| `@hugeicons/react`                | `1.1.10`        |
+| `@hugeicons/react`                   | `1.1.10`        |
 
 使用 HeroUI v3 的 compound API，例如 `Card.Header`、`Popover.Content`；交互组件使用 `onPress`。通用选择使用现有 `ChoiceSelect`，工具栏按钮使用 `ActionButton`。保留隐藏的原生表单辅助节点，不用自制点击层破坏键盘操作。
 
@@ -73,7 +73,7 @@ HeroUI Pro 需要有效商业授权。沿用项目安装脚本和授权缓存，
 | 本机用户菜单、网页上下文 | [HomeMenus.tsx](src/renderer/HomeMenus.tsx)                                                                                                       | Avatar、Dropdown、Button                                                                      |
 | 当前工作区对话搜索       | [ConversationSearch.tsx](src/renderer/ConversationSearch.tsx)                                                                                     | Pro Command；真实标题和消息过滤                                                               |
 | 首次配置与继续准备       | [Onboarding.tsx](src/renderer/Onboarding.tsx)                                                                                                     | 连续对话记录、HeroUI 操作与状态表面、真实宿主准备流程                                         |
-| 模型与推理强度           | [ModelPicker.tsx](src/renderer/ModelPicker.tsx)                                                                                                   | 单层 Popover、ListBox 与带动态刻度的 Slider                                                                 |
+| 模型与推理强度           | [ModelPicker.tsx](src/renderer/ModelPicker.tsx)                                                                                                   | 单层 Popover、ListBox 与带动态刻度的 Slider                                                   |
 | 通用选择与工具按钮       | [ChoiceSelect.tsx](src/renderer/ChoiceSelect.tsx)、[ui.tsx](src/renderer/ui.tsx)                                                                  | Select/ListBox、Button/Tooltip                                                                |
 | 执行、计划、核对与产物   | [ExecutionPanel.tsx](src/renderer/ExecutionPanel.tsx)                                                                                             | Pro Timeline、ChatTool；HeroUI Disclosure、Button                                             |
 | 审批与结构化回答         | [RequestPanel.tsx](src/renderer/RequestPanel.tsx)                                                                                                 | Pro RadioButtonGroup；HeroUI Card、Chip、Input、TextArea、Button                              |
@@ -101,7 +101,7 @@ CLI 和服务标识保留上游图形与原色，来源见 [图标说明](src/re
 - **上下文**：移除元素引用不自动改写或清空草稿。网页未就绪时，依赖浏览器的操作不可伪装为可用。
 - **任务进行中**：可继续编辑草稿，但不把草稿显示为已加入发送队列；停止按钮停止当前任务。未经实现与验证，不增加自动排队行为。
 - **计划与结果**：展示公开计划、真实工具动作、核对证据、人工处理和产物；不编造进度百分比、成功结果或隐藏推理。
-- **模型**：选项来自当前 CLI 能力；用户选择与实际本轮执行模型分别确认。其他 CLI 仅被检测到，不等于可执行。
+- **CLI 与模型**：新对话使用应用默认 CLI，已有会话固定执行器，切换 CLI 创建新对话而非搬运原始会话。模型选项来自当前 CLI 能力，目录、选择和缓存按 CLI 隔离；没有模型目录时沿用本机默认配置，不填入猜测项。用户选择与实际本轮执行模型分别确认，安装检测不等于登录或真实执行已验证。
 - **用量**：保留 **USD API 等价估算为第一主指标、每日 USD 图优先**。Token、输入/输出为次级数据；Figma 的 Token 优先例图是较早快照，不得据此反转当前产品行为。
 - **未知值**：缺少费用、费率、模型或 Token 字段时保持未知/部分数据；真实零值和未采集到数据必须区分。API 等价估算不是订阅实际扣费。
 - **共享**：角色权限与当前控制权分开表达；仅查看者不能操作。共享结束后显示结束状态，不继续显示可操作或可交接。
@@ -121,7 +121,7 @@ CLI 和服务标识保留上游图形与原色，来源见 [图标说明](src/re
 
 当前界面已接入首页菜单/搜索、真实 Codex 任务、模型与用量、元素编辑、页面共享及已有飞书配置。设计中的样例人物、任务、金额、文件和网页内容必须替换为应用实际数据。
 
-通用 MCP 服务配置与管理、多 Agent 并行调度、更多 CLI 执行器、账户/订阅服务和桌面 Computer Use 尚未实现。已有内部 Neo MCP 网页工具链不等于通用 MCP 产品能力；Figma 中的未来状态不能作为后端支持证明。
+CLI 支持范围与各自的真实验证边界见 [本机 CLI 适配](docs/mainstream-cli-support.md)。通用 MCP 服务配置与管理、多 Agent 并行调度、账户/订阅服务和桌面 Computer Use 尚未实现。已有内部 Neo MCP 网页工具链不等于通用 MCP 产品能力；Figma 中的未来状态不能作为后端支持证明。
 
 主持人共享沿用现有 Modal 入口；访客页沿用实际共享流。若设计参考中的按钮没有对应权限或协议，先保留准确状态，不放置无法兑现的操作。
 

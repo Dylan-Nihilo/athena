@@ -3,6 +3,7 @@ import { Button, Card } from '@heroui/react';
 import { LayoutGroup, motion, useReducedMotion } from 'motion/react';
 import { ArrowDown02Icon, Loading02Icon } from '@hugeicons-pro/core-stroke-rounded';
 import { Icon } from './ui';
+import { ChoiceSelect } from './ChoiceSelect';
 import athenaLogo from './assets/brand/athena-profile.png';
 import downloadIcon from './assets/onboarding/download.svg';
 import infoIcon from './assets/onboarding/info.svg';
@@ -128,10 +129,15 @@ function screenForState(state: OnboardingState, intent: Intent): Screen {
     return 'browserError';
   if (state.error) return 'error';
   if (intent === 'pick') return 'folder';
-  if (state.codex.status === 'missing') return 'missing';
-  if (state.codex.status === 'error') return 'error';
-  if (state.codex.status !== 'ready') return 'connect';
-  if (state.codex.authentication !== 'ready') return 'login';
+  if (state.selectedAgent && state.selectedAgent !== 'codex') {
+    if (!state.executor?.available || !state.executor.supported) return 'missing';
+    if (state.executor.authentication === 'missing') return 'login';
+  } else {
+    if (state.codex.status === 'missing') return 'missing';
+    if (state.codex.status === 'error') return 'error';
+    if (state.codex.status !== 'ready') return 'connect';
+    if (state.codex.authentication !== 'ready') return 'login';
+  }
   if (state.workspace.status === 'error') return 'folderError';
   if (state.coreReady) {
     if (state.browser.status === 'ready') return 'ready';
@@ -166,12 +172,17 @@ function content(
         : undefined,
     label: '进行中',
   };
+  const external = state.selectedAgent && state.selectedAgent !== 'codex';
+  const name = state.executor?.name || state.selectedAgent || 'Codex';
   const connection: StatusCard = {
     icon: 'terminal',
-    title: 'Codex',
-    detail: state.codex.path || state.codex.version,
-    label:
-      state.codex.status === 'ready' && state.codex.authentication === 'ready'
+    title: external ? name : 'Codex',
+    detail: external ? state.executor?.path : state.codex.path || state.codex.version,
+    label: external
+      ? state.executor?.available
+        ? '已检测'
+        : '未就绪'
+      : state.codex.status === 'ready' && state.codex.authentication === 'ready'
         ? '已连接'
         : state.codex.status === 'missing'
           ? '未安装'
@@ -187,6 +198,43 @@ function content(
         ? '可访问'
         : '待核对',
   };
+  if (
+    external &&
+    [
+      'connect',
+      'detecting',
+      'missing',
+      'login',
+      'loginWait',
+      'loginCheck',
+      'connected',
+      'details',
+    ].includes(screen)
+  ) {
+    if (screen === 'missing')
+      return {
+        title: `${name} 尚不可用。`,
+        lines: ['请在终端检查安装，或选择其他已安装的 CLI，然后重新检查。'],
+        cards: [connection],
+      };
+    if (screen.startsWith('login'))
+      return {
+        title: `连接 ${name}。`,
+        lines: ['请在终端完成登录，然后重新检查。'],
+        cards: [connection],
+      };
+    if (screen === 'detecting')
+      return {
+        title: '我来看看。',
+        lines: [`正在检查本机 ${name} 与工作目录。`],
+        cards: [pendingCard],
+      };
+    return {
+      title: screen === 'connected' ? `已找到本机 ${name}。` : `使用本机 ${name}。`,
+      lines: ['沿用你已有的登录、模型与服务配置。', '我们再确认工作的地方。'],
+      cards: [connection],
+    };
+  }
   switch (screen) {
     case 'welcome':
       return {
@@ -745,6 +793,12 @@ export function Onboarding({
       if (state.operation.kind === 'prepare-browser' && state.coreReady) result.push(skipBrowser);
       return result;
     }
+    if (
+      state.selectedAgent &&
+      state.selectedAgent !== 'codex' &&
+      ['missing', 'login', 'loginWait'].includes(current.screen)
+    )
+      return [check];
     switch (current.screen) {
       case 'welcome':
         return [
@@ -761,12 +815,12 @@ export function Onboarding({
         return [
           {
             ...check,
-            label: '检查本机 Codex',
+            label: `检查本机 ${state.executor?.name || 'Codex'}`,
             run: (id) =>
               void run(
                 'onboarding:refresh',
                 undefined,
-                '检查本机 Codex',
+                `检查本机 ${state.executor?.name || 'Codex'}`,
                 'detecting',
                 'detect',
                 id,
@@ -1099,6 +1153,29 @@ export function Onboarding({
                       <p className="onboarding-error" role="alert">
                         {requestError}
                       </p>
+                    )}
+                    {active && !!state.agents?.length && (
+                      <ChoiceSelect
+                        label="新对话默认 CLI"
+                        value={state.selectedAgent || 'codex'}
+                        options={state.agents.map((agent) => ({
+                          value: agent.id,
+                          label: `${agent.name}${agent.available ? '' : ' · 未检测到'}`,
+                          disabled: !agent.available || !agent.supported,
+                        }))}
+                        isDisabled={leaving || requestPending || Boolean(state.operation)}
+                        onChange={(id) => {
+                          const agent = state.agents?.find((item) => item.id === id);
+                          if (agent)
+                            void run(
+                              'onboarding:agent',
+                              { id: agent.id },
+                              `使用本机 ${agent.name}`,
+                              'detecting',
+                              'detect',
+                            );
+                        }}
+                      />
                     )}
                     {active && (
                       <div className="onboarding-actions">

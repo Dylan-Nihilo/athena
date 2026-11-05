@@ -35,6 +35,21 @@ async function setup(t: any) {
 }
 const model = { model: 'actual-one', requested: 'actual-one', source: 'thread-response' as const };
 
+test('native CLI model changes keep mixed-model usage unknown instead of pricing everything as the last model', async (t) => {
+  const { store } = await setup(t);
+  store.start('native', 'pi');
+  store.bind('native', 'pi-session', 'pi-turn', { source: 'unconfirmed' }, zeroTokens());
+  store.reroute('pi-session', 'pi-turn', { model: 'gpt-6-sol', source: 'cli-message' });
+  assert.equal(store.snapshot().records[0].model, 'gpt-6-sol');
+  store.reroute('pi-session', 'pi-turn', { model: 'gpt-6.1-sol', source: 'cli-message' });
+  store.reroute('pi-session', 'pi-turn', { model: 'third-model', source: 'cli-message' });
+  const record = store.snapshot().records[0];
+  assert.equal(record.model, undefined);
+  assert.equal(record.apiPricing, undefined);
+  assert.deepEqual(record.models, ['gpt-6-sol', 'gpt-6.1-sol', 'third-model']);
+  assert.equal(record.partial, true);
+});
+
 test('USD valuation persists its official rates and basis across restart and model confirmation', async (t) => {
   const { store, dir } = await setup(t);
   store.start('priced', 'codex');

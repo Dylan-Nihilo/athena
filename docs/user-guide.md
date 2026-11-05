@@ -40,7 +40,9 @@ Athena 把本机 Codex 任务和 BrowserOS neo 网页工作区放在同一个 Ma
 
 Athena 会检查本机 Codex CLI 的官方稳定版。发现新版本时会显示当前版本、最新版本和「查看更新说明」。收起后同一版本不再主动提醒，仍可在「设置与连接」的 Codex 版本行打开发布说明。更新由你自行安装。
 
-当前任务执行器只接通 Codex。Claude Code、OpenCode、Gemini CLI 的安装检测不代表它们已能在 Athena 中执行任务。
+在「设置与连接」选择新对话默认 CLI；输入栏的 Agent 菜单可为新对话改选 CLI，已有执行记录的对话不会迁移到其他 CLI。旧档案未记录执行器的对话继续使用 Codex。未安装或需要登录时，请在终端处理后刷新，不会自动安装或切换。
+
+当前包含 Codex、Pi、Claude Code、Gemini CLI 和 Cursor Agent 的协议适配。Pi 的本地工具逐项请求确认；Claude Code 限文本任务，Cursor 限只读任务，浏览器工具仍仅向 Codex 开放。Pi 与 Claude 的隔离真实模型验证已通过；Cursor 登录未就绪、Gemini 未安装，尚未完成其真实模型验收。OpenCode 仍只检测安装。详细能力与验证状态见 [本机 CLI 适配](mainstream-cli-support.md)。
 
 输入框的 Agent 按钮显示当前服务图标，悬停可查看名称。连接状态对应当前工作目录里的这段对话。同一对话就绪后会复用现有 CLI 会话；打开模型选择器无需重新登录。即使某段历史会话无法恢复，也可以单独刷新模型目录。
 
@@ -116,7 +118,14 @@ BrowserOS neo 以独立后台进程运行，使用专用 profile；页面画面�
 
 ## 开发环境与验证
 
-需要 Node.js 22.12+ 和 npm。安装前，将 CollectUI 分发的 HugeIcons Pro npm key 设置为当前 shell 或 CI 的环境变量 `HUGEICONS_NPM_TOKEN`。根目录 `.npmrc` 只对 `npm.collectui.pro` 使用该凭据，以安装 `@hugeicons-pro/core-stroke-rounded`。
+需要 Node.js 22.12+ 和 npm。安装前，在用户级 `~/.npmrc` 中配置 CollectUI 分发的 HugeIcons Pro npm key，保留文件内其他已有配置：
+
+```ini
+@hugeicons-pro:registry=https://npm.collectui.pro/
+//npm.collectui.pro/:_authToken=YOUR_COLLECTUI_TOKEN
+```
+
+仅在本机将 `YOUR_COLLECTUI_TOKEN` 替换为真实 Key，并设置 `chmod 600 ~/.npmrc`。仓库 `.npmrc` 仅保留 registry，不保存 Token 或鉴权环境变量占位。pnpm 不展开仓库控制的鉴权环境变量；如需使用环境变量，应在用户级配置中引用。CI 可使用临时用户配置文件。不要提交用户配置或在聊天、日志中输出真实 Key。
 
 ```bash
 npm ci
@@ -158,7 +167,7 @@ npx tsx tests/onboarding.e2e.ts
 
 - 浏览器工作流和本机文件修改已有实现；它们不代表所有网站都兼容。
 - 桌面 Computer Use 仍在调研，未实现通用 Mac 应用控制或隔离桌面控制。
-- 通用 MCP 服务配置/管理、多 Agent 并行调度、更多 CLI 执行器、账户/订阅服务尚未实现。
+- CLI 支持与各自的验收边界见 [本机 CLI 适配](mainstream-cli-support.md)；通用 MCP 服务配置/管理、多 Agent 并行调度、账户/订阅服务尚未实现。
 - 已有内部 Neo MCP 工具链不等于任意第三方 MCP 服务都可接入。
 - 登录、验证码、支付、外部 OAuth 弹窗和其他敏感流程不得从普通网页验收外推。
 - 录制分析尚不提供一键完整 Playwright 测试、PRD 覆盖率报告或后端状态复原。

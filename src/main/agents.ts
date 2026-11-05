@@ -1,7 +1,6 @@
 import { spawn, execFile, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { access, readdir, stat } from 'node:fs/promises';
+import { access, stat } from 'node:fs/promises';
 import { constants } from 'node:fs';
-import { homedir } from 'node:os';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { promisify } from 'node:util';
@@ -9,17 +8,16 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { createHash } from 'node:crypto';
 import type {
   AgentEvent,
-  AgentId,
   AgentInfo,
   BrowserTool,
   CodexUpdateStatus,
-  ElementDetails,
   ElementRef,
   ToolCall,
   ToolResult,
   UserInputRequest,
 } from '../shared/types.ts';
 
+import type { AgentSession } from './agent-session';
 import { parseTokenCounts, readUsageBaseline, readExecutionModel } from './usage';
 import {
   zeroTokens,
@@ -29,60 +27,9 @@ import {
 } from '../shared/usage';
 
 const execFileAsync = promisify(execFile);
-const AGENTS: [AgentId, string][] = [
-  ['codex', 'Codex'],
-  ['claude', 'Claude Code'],
-  ['opencode', 'OpenCode'],
-  ['gemini', 'Gemini CLI'],
-];
-
-async function executableDirectories(): Promise<string[]> {
-  const home = homedir();
-  const directories = [
-    ...(process.env.PATH ?? '').split(path.delimiter),
-    path.dirname(process.execPath),
-    path.join(home, '.local/bin'),
-    path.join(home, '.bun/bin'),
-    path.join(home, '.npm-global/bin'),
-    '/opt/homebrew/bin',
-    '/usr/local/bin',
-    '/usr/bin',
-    '/bin',
-  ];
-  const nvm = path.join(home, '.nvm/versions/node');
-  try {
-    const versions = (await readdir(nvm)).filter((name) => /^v\d+\.\d+\.\d+$/.test(name));
-    versions.sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
-    directories.push(...versions.map((version) => path.join(nvm, version, 'bin')));
-  } catch {
-    /* nvm is optional. */
-  }
-  return [...new Set(directories.filter((directory) => path.isAbsolute(directory)))];
-}
-
-async function findExecutable(name: string, directories: string[]): Promise<string | undefined> {
-  for (const directory of directories) {
-    const candidate = path.join(directory, name);
-    try {
-      await access(candidate, constants.X_OK);
-      if ((await stat(candidate)).isFile()) return candidate;
-    } catch {
-      /* Try the next explicit PATH directory. */
-    }
-  }
-}
-
-export function cliEnvironment(executable: string): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = {
-    ...process.env,
-    PATH: `${path.dirname(executable)}${path.delimiter}${process.env.PATH ?? '/usr/bin:/bin'}`,
-  };
-  // This integration uses the CLI's existing login, never an API key supplied by the app.
-  delete env.OPENAI_API_KEY;
-  delete env.CODEX_API_KEY;
-  delete env.CODEX_ACCESS_TOKEN;
-  return env;
-}
+import { cliEnvironment } from './agent-process';
+export { cliEnvironment } from './agent-process';
+export { detectAgents } from './agent-discovery';
 
 const probeLimits = { timeout: 2500, killSignal: 'SIGKILL' as const, maxBuffer: 64 * 1024 };
 
@@ -96,91 +43,6 @@ async function readCliVersion(executable: string): Promise<string> {
     .trim()
     .split('\n')[0]
     .slice(0, 120);
-}
-
-export async function detectAgents(codexFallback?: string): Promise<AgentInfo[]> {
-  const directories = await executableDirectories();
-  return Promise.all(
-    AGENTS.map(async ([id, name]) => {
-      let executable = await findExecutable(id, directories);
-      if (!executable && id === 'codex' && codexFallback) {
-        try {
-          await access(codexFallback, constants.X_OK);
-          if ((await stat(codexFallback)).isFile()) executable = codexFallback;
-        } catch {
-          /* An application-private Codex is optional. */
-        }
-      }
-      if (!executable)
-        return { id, name, available: false, supported: id === 'codex', detail: '未找到本机 CLI' };
-      const info: AgentInfo = {
-        id,
-        name,
-        available: true,
-        supported: id === 'codex',
-        path: executable,
-        authentication: 'unknown',
-      };
-      const probeOptions = { ...probeLimits, env: cliEnvironment(executable) };
-      const [version, login] = await Promise.allSettled([
-        readCliVersion(executable),
-        id === 'codex'
-          ? execFileAsync(executable, ['login', 'status'], probeOptions)
-          : Promise.resolve(undefined),
-      ]);
-      if (version.status === 'fulfilled') {
-        info.version = version.value;
-      } else {
-        info.available = false;
-        info.detail = '已找到 CLI，但未能在 2.5 秒内正常启动；请在终端检查后刷新';
-      }
-      if (id === 'codex') {
-        const result = (login.status === 'fulfilled' ? login.value : login.reason) as
-          { stdout?: string; stderr?: string } | undefined;
-        const status = `${result?.stdout ?? ''}\n${result?.stderr ?? ''}`;
-        info.authentication = /not logged in|not authenticated/i.test(status)
-          ? 'missing'
-          : login.status === 'fulfilled' && /logged in/i.test(status)
-            ? 'ready'
-            : 'unknown';
-        info.detail ??=
-          info.authentication === 'missing'
-            ? '请先在终端运行 codex login'
-            : info.authentication === 'ready'
-              ? '使用本机 Codex 的既有登录'
-              : '暂时无法确认登录状态；可在终端检查 codex login status';
-      } else if (info.available) info.detail = '已检测到；当前版本仅接通 Codex';
-      if (id === 'codex' && !info.available && codexFallback && executable !== codexFallback) {
-        try {
-          await access(codexFallback, constants.X_OK);
-          const fallbackVersion = await readCliVersion(codexFallback);
-          const login = await execFileAsync(codexFallback, ['login', 'status'], {
-            ...probeOptions,
-            env: cliEnvironment(codexFallback),
-          }).then(
-            (output) => ({ successful: true, ...output }),
-            (error: { stdout?: string; stderr?: string }) => ({ successful: false, ...error }),
-          );
-          const status = `${login.stdout ?? ''}\n${login.stderr ?? ''}`;
-          return {
-            ...info,
-            available: true,
-            path: codexFallback,
-            version: fallbackVersion,
-            authentication: /not logged in|not authenticated/i.test(status)
-              ? 'missing'
-              : login.successful && /logged in/i.test(status)
-                ? 'ready'
-                : 'unknown',
-            detail: '使用 Athena 私有安装的 Codex，保留本机已有登录与配置',
-          } satisfies AgentInfo;
-        } catch {
-          /* Preserve the original diagnostic when the fallback is also unavailable. */
-        }
-      }
-      return info;
-    }),
-  );
 }
 
 type FetchRelease = (url: string, options: RequestInit) => Promise<Response>;
@@ -284,18 +146,7 @@ interface Run {
   resolve: () => void;
   reject: (error: Error) => void;
 }
-interface SessionOptions {
-  workspace: string;
-  executablePath: string;
-  sessionId?: string;
-  sessionToolsFingerprint?: string;
-  historyForToolUpgrade?: string;
-  tools: BrowserTool[];
-  inspectSelectedElement?: (ref: string) => Promise<ElementDetails>;
-  callTool: (name: string, args: Record<string, unknown>) => Promise<ToolResult>;
-  onEvent: (event: AgentEvent) => void;
-  onClose?: (reason: string) => void;
-}
+type SessionOptions = import('./agent-session').AgentSessionOptions;
 
 export function browserToolsFingerprint(tools: BrowserTool[]): string {
   const ordered = (value: unknown, depth = 0): unknown => {
@@ -435,7 +286,7 @@ function imageUrl(image: string): string | undefined {
   }
 }
 
-export class CodexSession {
+export class CodexSession implements AgentSession {
   private options: SessionOptions;
   private child?: ChildProcessWithoutNullStreams;
   private startup?: Promise<void>;

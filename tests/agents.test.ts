@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { mkdtemp, writeFile, chmod, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { nodeShebang } from './node-script';
 import {
   CodexSession,
   browserToolsFingerprint,
@@ -14,6 +15,7 @@ import type { AgentEvent, AgentInfo, ElementDetails, ToolResult } from '../src/s
 async function fixture(
   options: {
     initializeDelayMs?: number;
+    holdInitialize?: boolean;
     threadStartDelayMs?: number;
     waitForLogin?: boolean;
     loginMessage?: string;
@@ -24,7 +26,7 @@ async function fixture(
   const directory = await mkdtemp(path.join(tmpdir(), 'workbench-agent-test-'));
   const executable = path.join(directory, 'codex');
   const log = path.join(directory, 'requests.jsonl');
-  const code = `#!${process.execPath}
+  const code = `${nodeShebang()}
 const fs = require('node:fs');
 const readline = require('node:readline');
 const log = ${JSON.stringify(log)};
@@ -46,7 +48,7 @@ process.on('SIGTERM', () => setTimeout(() => process.exit(0), 30));
 readline.createInterface({input:process.stdin}).on('line', line => {
   const request = JSON.parse(line); fs.appendFileSync(log, line+'\\n');
   const p = request.params || {};
-  if (request.method === 'initialize') return setTimeout(()=>send({id:request.id,result:{userAgent:'fake-codex'}}),options.initializeDelayMs||0);
+  if (request.method === 'initialize') { if(options.holdInitialize)return; return setTimeout(()=>send({id:request.id,result:{userAgent:'fake-codex'}}),options.initializeDelayMs||0); }
   if (request.method === 'model/list') return send({id:request.id,result:{data:[
     {id:'catalog-a',model:'model-a',displayName:'Model A',isDefault:true,supportedReasoningEfforts:[{reasoningEffort:'low',description:'Quick'}],defaultReasoningEffort:'low'},
     {id:'hidden',model:'hidden',hidden:true},
@@ -177,8 +179,8 @@ readline.createInterface({input:process.stdin}).on('line', line => {
   };
 }
 
-async function waitFor(predicate: () => boolean | Promise<boolean>) {
-  const deadline = Date.now() + 3000;
+async function waitFor(predicate: () => boolean | Promise<boolean>, timeoutMs = 3000) {
+  const deadline = Date.now() + timeoutMs;
   while (!(await predicate())) {
     if (Date.now() > deadline) throw new Error('Timed out waiting for protocol event');
     await new Promise((resolve) => setTimeout(resolve, 10));
@@ -237,14 +239,14 @@ test('preparing a session initializes once without a model turn and is reused by
 });
 
 test('closing a prewarm rejects its handshake and cannot create a late thread', async (t) => {
-  const f = await fixture({ initializeDelayMs: 1000 });
+  const f = await fixture({ holdInitialize: true });
   const agent = session(f, []);
   t.after(() => {
     agent.close();
     return f.cleanup();
   });
   const warming = assert.rejects(agent.prepare(), /关闭/);
-  await waitFor(async () => (await f.requests()).some((r) => r.method === 'initialize'));
+  await waitFor(async () => (await f.requests()).some((r) => r.method === 'initialize'), 10000);
   agent.close();
   await warming;
   assert.equal(
@@ -1345,7 +1347,15 @@ test('discovery uses executable PATH entries and does not pass an API key to log
   assert.equal(codex.authentication, 'ready');
   assert.equal(codex.version, 'codex-cli test');
   assert.equal(JSON.parse(await readFile(f.log, 'utf8')).apiKeyPresent, false);
-  assert.ok(agents.filter((agent) => agent.id !== 'codex').every((agent) => !agent.supported));
+  assert.deepEqual(agents.map((agent) => agent.id).sort(), [
+    'claude',
+    'codex',
+    'cursor',
+    'gemini',
+    'opencode',
+    'pi',
+  ]);
+  assert.equal(agents.find((agent) => agent.id === 'opencode')?.supported, false);
 });
 
 test('Codex update checks compare the installed CLI against the official stable release', async () => {
@@ -1411,7 +1421,7 @@ test('Codex update checks share probes, cache release metadata, and observe exte
   try {
     await writeFile(
       executable,
-      `#!${process.execPath}\nconst fs=require('fs');if(process.argv[2]!=='--version')process.exit(2);fs.appendFileSync(${JSON.stringify(path.join(root, 'probes'))},'v');console.log('codex-cli '+fs.readFileSync(${JSON.stringify(path.join(root, 'installed'))},'utf8'));`,
+      `${nodeShebang()}\nconst fs=require('fs');if(process.argv[2]!=='--version')process.exit(2);fs.appendFileSync(${JSON.stringify(path.join(root, 'probes'))},'v');console.log('codex-cli '+fs.readFileSync(${JSON.stringify(path.join(root, 'installed'))},'utf8'));`,
       { mode: 0o700 },
     );
     await writeFile(path.join(root, 'installed'), '0.99.0');

@@ -1,4 +1,3 @@
-import assert from 'node:assert/strict';
 import { expect, type Page } from '@playwright/test';
 
 export async function checkTaskPanels(page: Page) {
@@ -73,8 +72,12 @@ export async function checkTaskPanels(page: Page) {
   await expect(request.getByRole('textbox', { name: '记录名称' })).toBeFocused();
   await expect(request.getByRole('textbox', { name: '记录名称' })).toHaveValue('');
   await draft.fill(before);
-  assert.ok((await page.locator('.chat-scroll').boundingBox())!.height >= 120);
-  assert.ok((await request.locator('.request-questions').boundingBox())!.height >= 90);
+  await expect
+    .poll(async () => (await page.locator('.chat-scroll').boundingBox())?.height ?? 0)
+    .toBeGreaterThanOrEqual(120);
+  await expect
+    .poll(async () => (await request.locator('.request-questions').boundingBox())?.height ?? 0)
+    .toBeGreaterThanOrEqual(90);
   await execution.getByRole('button', { name: '处理请求' }).press('Enter');
   await expect(request.getByRole('textbox', { name: '记录名称' })).toBeFocused();
   const submit = request.getByRole('button', { name: '提交回答' });
@@ -93,4 +96,23 @@ export async function checkTaskPanels(page: Page) {
       ),
     )
     .toEqual({ id: 'questionnaire', conversationId: 'home', messageId: 'reply', answers });
+
+  await page.evaluate(() => {
+    const f = (window as any).__homeFixture;
+    const conversation = f.snapshot.conversations.find(
+      (item: { id: string }) => item.id === 'home',
+    );
+    conversation.agent = 'pi';
+    Object.assign(conversation.messages[0], {
+      status: 'done',
+      tools: [
+        { id: 'native-read', name: 'read', input: { path: 'evidence.txt' }, status: 'done' },
+        { id: 'native-write', name: 'write', input: { path: 'evidence.txt' }, status: 'done' },
+      ],
+    });
+    f.emit({ type: 'conversation:updated', conversation: structuredClone(conversation) });
+  });
+  await expect(execution.getByText('读取文件', { exact: true })).toBeVisible();
+  await expect(execution.getByText('写入文件', { exact: true })).toBeVisible();
+  await expect(execution.getByText('读取网页内容', { exact: true })).toHaveCount(0);
 }

@@ -17,7 +17,7 @@ import {
   TriangleAlertIcon,
 } from '@hugeicons-pro/core-stroke-rounded';
 import { Icon } from './ui';
-import type { ChatMessage, PendingAgentRequest, ToolCall } from '../shared/types';
+import type { AgentId, ChatMessage, PendingAgentRequest, ToolCall } from '../shared/types';
 
 const names: Record<string, string> = {
   browser_context: '查看当前网页',
@@ -56,8 +56,19 @@ const names: Record<string, string> = {
   status: '检查连接',
   controls: '提供调整控件',
 };
-export const toolTitle = (raw: string) =>
-  names[raw.replace(/^(?:workbench_browser_|neo_)/, '')] ?? raw;
+const nativeNames: Record<string, string> = {
+  read: '读取文件',
+  write: '写入文件',
+  edit: '修改文件',
+  bash: '执行命令',
+  grep: '搜索文件内容',
+  find: '查找文件',
+  ls: '列出目录',
+};
+export const toolTitle = (raw: string, agent: AgentId = 'codex') =>
+  (agent !== 'codex' ? nativeNames[raw] : undefined) ??
+  names[raw.replace(/^(?:workbench_browser_|neo_)/, '')] ??
+  raw;
 function toolTarget(tool: ToolCall): string {
   const input =
     tool.input && typeof tool.input === 'object' ? (tool.input as Record<string, unknown>) : {};
@@ -75,6 +86,7 @@ function toolTarget(tool: ToolCall): string {
 export function ExecutionPanel({
   message,
   conversationId,
+  agent = 'codex',
   pending,
   statusLabel,
   onAction,
@@ -84,6 +96,7 @@ export function ExecutionPanel({
 }: {
   message: ChatMessage;
   conversationId: string;
+  agent?: AgentId;
   pending?: PendingAgentRequest;
   statusLabel: string;
   onAction: <T = unknown>(action: string, payload?: unknown) => Promise<T>;
@@ -122,7 +135,7 @@ export function ExecutionPanel({
             ? '已停止'
             : running
               ? currentTool
-                ? toolTitle(currentTool.name)
+                ? toolTitle(currentTool.name, agent)
                 : statusLabel || '等待后续结果'
               : message.status === 'error'
                 ? '本轮未完成'
@@ -323,7 +336,7 @@ export function ExecutionPanel({
                   >
                     <ChatTool.Trigger>
                       <ChatTool.StatusIcon />
-                      <span>{toolTitle(tool.name)}</span>
+                      <span>{toolTitle(tool.name, agent)}</span>
                       {target && (
                         <span className="execution-tool-target" title={target}>
                           {target}

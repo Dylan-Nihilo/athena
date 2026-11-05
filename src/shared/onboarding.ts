@@ -42,6 +42,10 @@ export interface OnboardingState {
   stage: OnboardingStage;
   requiresSetup: boolean;
   coreReady: boolean;
+  /** Selected default CLI; codex below remains the legacy Codex-specific diagnostic. */
+  selectedAgent?: import('./types').AgentId;
+  executor?: import('./types').AgentInfo;
+  agents?: import('./types').AgentInfo[];
   codex: {
     status: 'unchecked' | 'checking' | 'missing' | 'error' | 'ready';
     authentication: 'unknown' | 'missing' | 'ready';
@@ -70,6 +74,7 @@ export interface OnboardingState {
 export interface OnboardingCommandPayloads {
   'onboarding:open': undefined;
   'onboarding:refresh': undefined;
+  'onboarding:agent': { id: import('./types').AgentId };
   'onboarding:plan-install': { kind: OnboardingInstallKind };
   'onboarding:install': { planId: string };
   'onboarding:login/start': undefined;

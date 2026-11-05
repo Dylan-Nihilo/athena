@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { uiBrowserExecutable } from './ui-browser';
 import { chromium, expect } from '@playwright/test';
 import { createServer, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
@@ -72,9 +73,7 @@ const server = await createServer({
 await server.listen();
 const address = server.httpServer!.address() as { port: number };
 const browser = await chromium.launch({
-  executablePath: path.resolve(
-    '../browseros-runtime/BrowserOS neo.app/Contents/MacOS/BrowserOS neo',
-  ),
+  executablePath: uiBrowserExecutable(),
   headless: true,
   args: [
     '--disable-browseros-server',
