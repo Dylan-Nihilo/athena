@@ -1,11 +1,18 @@
 # 更新日志
 
-## 0.8.0 · 2026-11-03
+## 0.8.0 · 2026-11-04
 
 - 模型选择和推理强度可在同一面板调整。工作台会提示待审批、待回答、需要人工接管的任务，以及 Codex CLI 的可用更新。
 - 草稿按工作目录与对话隔离。切换对话或等待发送回执时，后续输入不会被覆盖；后台提问也不会抢走草稿焦点。
 - 浏览器从窗口顶部独立分栏，输入框为发送按钮保留空间。改进手机共享检查器的滚动、长任务标题的换行和活动标签的可见性。
 - 助手回复支持 Markdown 表格。改进取消任务的状态、用量明细的键盘导航、深色主题和设置分类，并将通用操作图标迁移至 HugeIcons Pro。
+
+macOS Apple Silicon 安装包已完成 Developer ID 正式签名和 Apple 公证，尚无自动更新。
+
+- [DMG 安装包](https://github.com/bitcat-ai/athena/releases/download/v0.8.0/Athena-0.8.0-mac-arm64.dmg)
+- [ZIP 归档](https://github.com/bitcat-ai/athena/releases/download/v0.8.0/Athena-0.8.0-mac-arm64.zip)
+- [SHA-256 校验文件](https://github.com/bitcat-ai/athena/releases/download/v0.8.0/SHA256SUMS.txt)
+- [Release 页面](https://github.com/bitcat-ai/athena/releases/tag/v0.8.0)
 
 ## 0.7.0 · 2026-11-02
 
@@ -25,7 +32,7 @@
 - [SHA-256 校验文件](https://github.com/Dylan-Nihilo/athena/releases/download/v0.7.0/SHA256SUMS.txt)
 - [Release 页面](https://github.com/Dylan-Nihilo/athena/releases/tag/v0.7.0)
 
-安装包采用 ad-hoc 签名，未做 Developer ID 分发签名或 Apple 公证，尚无自动更新。Codex CLI 和 BrowserOS neo 可在首次引导中按需准备，登录由用户在官方流程中完成；安装包不包含用户登录、聊天或凭据。
+0.7.0 初版采用 ad-hoc 签名，后续分发包已替换为完成 Developer ID 正式签名和 Apple 公证的版本，版本标签保持不变。尚无自动更新。Codex CLI 和 BrowserOS neo 可在首次引导中按需准备，登录由用户在官方流程中完成；安装包不包含用户登录、聊天或凭据。
 
 ## 0.6.1 · 2026-11-01
 

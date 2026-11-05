@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "build": "vite build && node scripts/build-main.mjs",
+    "size:app": "node scripts/measure-app-size.mjs",
     "start": "electron .",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
@@ -34,6 +35,7 @@
     "appId": "app.agent.workbench",
     "productName": "Athena",
     "electronDist": "node_modules/electron/dist",
+    "compression": "maximum",
     "directories": {
       "output": "release/v${version}"
     },
@@ -42,8 +44,9 @@
       "resources/**/*",
       "THIRD_PARTY_NOTICES.md",
       "package.json",
-      "!node_modules/@heroui-pro{,/**/*}",
-      "!node_modules/@hugeicons-pro{,/**/*}"
+      "!dist/**/*.map",
+      "!node_modules/**/*",
+      "node_modules/**/{LICENSE,License,license,LICENCE,Licence,licence,NOTICE,Notice,notice,COPYING,Copying,copying}{,.*,-*}"
     ],
     "mac": {
       "icon": "resources/athena-icon.icns",
@@ -82,6 +85,7 @@
     "zod": "3.25.76"
   },
   "devDependencies": {
+    "@electron/asar": "^3.4.1",
     "@playwright/test": "^1.64.1",
     "@tailwindcss/vite": "4.3.3",
     "@types/node": "^26.6.6",
@@ -95,6 +99,7 @@
     "electron-builder": "^26.18.0",
     "esbuild": "^0.28.2",
     "hpsetup": "4.7.4",
+    "minimatch": "^10.2.6",
     "prettier": "^3.9.10",
     "tailwindcss": "4.3.3",
     "tsx": "^4.23.15",
