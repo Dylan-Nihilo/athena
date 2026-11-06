@@ -932,7 +932,21 @@ try {
   await expect.poll(async () => (await calls(flow, 'onboarding:complete')).length).toBe(1);
   await expect(flow.getByRole('button', { name: '进入 Athena', exact: true })).toHaveCount(0);
   await expect(flow.locator('.app-workbench')).toHaveCount(0);
+  await history.dispatchEvent('wheel', { deltaY: -300 });
+  await history.evaluate((node) => {
+    node.scrollTop = 0;
+  });
+  await expect(flow.getByRole('button', { name: '回到最新', exact: true })).toBeVisible();
   await update(flow, { operation: undefined, status: 'complete', requiresSetup: false });
+  await flow.waitForTimeout(1100);
+  await expect(flow.locator('.onboarding')).toBeVisible();
+  await expect(flow.locator('.app-workbench')).toHaveCount(0);
+  assert.equal(
+    (await calls(flow, 'onboarding:complete')).length,
+    1,
+    'Reading during final verification preserves completion without submitting it again',
+  );
+  await flow.getByRole('button', { name: '回到最新', exact: true }).click();
   await expect(flow.locator('.app-workbench')).toHaveAttribute('data-onboarding-enter', 'true');
   await expect(flow.locator('.app-workbench')).toHaveAttribute('inert', '');
   await expect(flow.locator('.browser-drawer')).toHaveClass(/is-open/);

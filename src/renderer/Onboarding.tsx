@@ -698,7 +698,12 @@ export function Onboarding({
   currentState.current = state;
   const generation = useRef(0);
   const exitIntent = useRef<
-    | { generation: number; sessionId: string; command: 'onboarding:defer' | 'onboarding:complete' }
+    | {
+        generation: number;
+        sessionId: string;
+        command: 'onboarding:defer' | 'onboarding:complete';
+        automatic: boolean;
+      }
     | undefined
   >(undefined);
   const exiting = useRef(false);
@@ -763,6 +768,7 @@ export function Onboarding({
       const deferred = snapshot.status === 'deferred' || snapshot.status === 'legacy';
       if (requested.command === 'onboarding:complete' ? complete : deferred || complete) {
         exitIntent.current = undefined;
+        if (requested.automatic && (!followLatest.current || userPausedScroll.current)) return;
         exitNow(snapshot);
       }
     },
@@ -816,7 +822,7 @@ export function Onboarding({
     const session = currentState.current.sessionId;
     exitIntent.current =
       exit && (command === 'onboarding:defer' || command === 'onboarding:complete')
-        ? { generation: ticket, sessionId: session, command }
+        ? { generation: ticket, sessionId: session, command, automatic: label === undefined }
         : undefined;
     pending.current = true;
     setRequestPending(true);
