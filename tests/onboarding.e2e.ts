@@ -20,7 +20,7 @@ await mkdir(output, { recursive: true });
 const errors: string[] = [];
 const checks: string[] = [];
 let app: ElectronApplication | undefined;
-let page: Page;
+let page!: Page;
 const executable = process.env.ATHENA_TEST_APP;
 async function launch(data: string) {
   app = await electron.launch({
@@ -52,10 +52,13 @@ async function close() {
 try {
   await launch(profile);
   await expect(page!.locator('.onboarding')).toBeVisible();
-  await expect(
-    page!.getByRole('heading', { name: '你好，我是 Athena。', exact: true }),
-  ).toBeVisible();
+  await expect(page!.getByRole('heading', { name: 'hello, Athena.', exact: true })).toBeVisible();
   assert.equal((await snapshot()).conversations.length, 0);
+  assert.deepEqual(
+    (await snapshot()).agents,
+    [],
+    'First-use greeting appears before local CLI discovery',
+  );
   await page!.screenshot({ path: path.join(output, 'welcome.png'), animations: 'disabled' });
   await close();
   await launch(profile);
@@ -65,25 +68,24 @@ try {
     'An unconfigured profile opens the local greeting; closing before interaction and reopening retains onboarding without inventing conversation history',
   );
 
-  await page!.getByRole('button', { name: '你好，Athena', exact: true }).click();
-  await page!.getByRole('button', { name: '检查本机 Codex', exact: true }).click();
+  await page!.getByRole('button', { name: '开始配置', exact: true }).click();
   await expect
     .poll(async () => (await snapshot()).onboarding?.codex.status, { timeout: 20000 })
     .toBe('ready');
   await expect
     .poll(async () => (await snapshot()).onboarding?.codex.authentication, { timeout: 20000 })
     .toBe('ready');
+  await page!.getByRole('button', { name: '选择 Codex', exact: true }).click();
   await expect(page!.locator('.onboarding .is-current')).toHaveAttribute(
     'data-screen',
     /connected|folder/,
+    { timeout: 20000 },
   );
-  const useConnection = page!.getByRole('button', { name: '使用这个连接', exact: true });
-  if (await useConnection.isVisible()) await useConnection.click();
   const before = (await snapshot()).settings.workspace;
   await app!.evaluate(({ dialog }, selected) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [selected] });
   }, workspace);
-  await page!.getByRole('button', { name: '选择文件夹', exact: true }).click();
+  await page!.getByRole('button', { name: '选择项目文件夹', exact: true }).click();
   await expect
     .poll(async () => (await snapshot()).onboarding?.workspace.candidate?.path)
     .toBe(workspace);
@@ -105,17 +107,47 @@ try {
     .poll(async () => (await snapshot()).onboarding?.browser.status, { timeout: 150000 })
     .toBe('ready');
   await expect.poll(async () => (await snapshot()).neo?.status, { timeout: 150000 }).toBe('ready');
+  await expect.poll(async () => (await snapshot()).browser.title).toBe('Athena · 从想法开始');
   await page!.screenshot({ path: path.join(output, 'ready.png'), animations: 'disabled' });
-  await page!.getByRole('button', { name: '开始吧', exact: true }).click();
-  await expect(page!.locator('.onboarding')).toHaveCount(0);
+  await expect(page!.locator('.onboarding')).toHaveCount(0, { timeout: 30000 });
+  await expect(page!.locator('.browser-drawer')).toHaveClass(/is-open/);
+  await expect.poll(async () => (await snapshot()).browserFrame?.width ?? 0).toBeGreaterThan(0);
+  const browserSnapshot = async () =>
+    page.evaluate(async () =>
+      JSON.parse((await window.workbench.invoke<{ text: string }>('browser:snapshot')).text),
+    );
+  const clickPageElement = async (selector: string) => {
+    const target = await page.evaluate(async (selector) => {
+      const result = await window.workbench.invoke<any>('browser:query', { selector });
+      return result.elements[0];
+    }, selector);
+    assert.ok(target?.bounds, `Missing landing page element: ${selector}`);
+    const frame = (await snapshot()).browserFrame!;
+    const surface = await page.locator('.browser-surface').boundingBox();
+    assert.ok(surface);
+    await page.mouse.click(
+      surface.x + ((target.bounds.x + target.bounds.width / 2) * surface.width) / frame.width,
+      surface.y + ((target.bounds.y + target.bounds.height / 2) * surface.height) / frame.height,
+    );
+  };
+  await clickPageElement('#title');
+  await page.keyboard.type('A new beginning with Athena');
+  await clickPageElement('#title-form button');
+  await expect
+    .poll(async () => (await browserSnapshot()).text)
+    .toContain('标题已更新：A new beginning with Athena');
+  await page.screenshot({ path: path.join(output, 'landing-interactive.png') });
+  checks.push(
+    'Completing setup opens the actual Athena landing page in the right browser; native mouse and keyboard change its title',
+  );
   const composer = page!.getByRole('textbox', { name: '发送给 Agent 的任务' });
   await composer.fill('这是一份尚未发送的草稿');
   const conversationsBefore = (await snapshot()).conversations.map((item) => item.id);
   await page!.locator('.sidebar-settings').click();
   await page!.getByRole('button', { name: '重新查看引导', exact: true }).click();
   await expect(page!.locator('.onboarding')).toBeVisible();
-  await page!.getByRole('button', { name: '稍后设置', exact: true }).click();
-  await expect(page!.locator('.onboarding')).toHaveCount(0);
+  await page!.getByRole('button', { name: '跳过设置', exact: true }).click();
+  await expect(page!.locator('.onboarding')).toHaveCount(0, { timeout: 30000 });
   await page!.getByRole('button', { name: '返回对话', exact: true }).click();
   await expect(composer).toHaveValue('这是一份尚未发送的草稿');
   assert.deepEqual(
@@ -128,26 +160,20 @@ try {
   await close();
   await launch(profile);
   await expect(page!.getByRole('textbox', { name: '发送给 Agent 的任务' })).toBeVisible();
-  await expect(page!.locator('.onboarding')).toHaveCount(0);
+  await expect(page!.locator('.onboarding')).toHaveCount(0, { timeout: 30000 });
   checks.push('A completed or deliberately deferred profile does not reopen setup on restart');
   await close();
 
   await launch(path.join(directory, 'browser-deferred-profile'));
-  await page!.getByRole('button', { name: '你好，Athena', exact: true }).click();
-  await page!.getByRole('button', { name: '检查本机 Codex', exact: true }).click();
-  await page!.getByRole('button', { name: '使用这个连接', exact: true }).click();
-  await app!.evaluate(({ dialog }, selected) => {
-    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [selected] });
-  }, workspace);
-  await page!.getByRole('button', { name: '选择文件夹', exact: true }).click();
-  await page!.getByRole('button', { name: '使用这个目录', exact: true }).click();
+  await page!.getByRole('button', { name: '开始配置', exact: true }).click();
+  await page!.getByRole('button', { name: '选择 Codex', exact: true }).click();
+  await page!.getByRole('button', { name: '先不选文件夹', exact: true }).click();
+  await expect.poll(async () => (await snapshot()).onboarding?.workspace.mode).toBe('personal');
+  await expect.poll(async () => (await snapshot()).onboarding?.workspace.status).toBe('ready');
+  assert.equal((await snapshot()).settings.workspaceMode, 'personal');
   await page!.getByRole('button', { name: '以后再说', exact: true }).click();
-  await expect(page!.locator('.onboarding .is-current')).toHaveAttribute(
-    'data-screen',
-    'readyWithoutBrowser',
-  );
-  await page!.getByRole('button', { name: '开始吧', exact: true }).click();
-  await expect(page!.locator('.onboarding')).toHaveCount(0);
+  await expect(page!.locator('.onboarding')).toHaveCount(0, { timeout: 30000 });
+  await page!.locator('.new-conversation').click();
   await expect
     .poll(async () => (await snapshot()).codexConnection?.status, { timeout: 60000 })
     .toBe('ready');
@@ -155,7 +181,7 @@ try {
   assert.equal((await snapshot()).neo?.status, 'stopped');
   assert.equal((await snapshot()).onboarding?.browser.status, 'deferred');
   checks.push(
-    'Skipping the optional browser reaches a truthful ready state and prepares the real Codex connection without starting BrowserOS or Neo',
+    'Project-free setup uses the private workspace; skipping the optional browser keeps Neo stopped while a new conversation can prepare the real Codex connection',
   );
   await close();
 
@@ -179,13 +205,13 @@ try {
   );
   await launch(legacyProfile);
   await expect(page!.getByRole('textbox', { name: '发送给 Agent 的任务' })).toBeVisible();
-  await expect(page!.locator('.onboarding')).toHaveCount(0);
+  await expect(page!.locator('.onboarding')).toHaveCount(0, { timeout: 30000 });
   assert.equal((await snapshot()).onboarding?.status, 'legacy');
   await page!.locator('.sidebar-settings').click();
   await page!.getByRole('button', { name: '重新查看引导', exact: true }).click();
   await expect(page!.locator('.onboarding')).toBeVisible();
-  await page!.getByRole('button', { name: '稍后设置', exact: true }).click();
-  await expect(page!.locator('.onboarding')).toHaveCount(0);
+  await page!.getByRole('button', { name: '跳过设置', exact: true }).click();
+  await expect(page!.locator('.onboarding')).toHaveCount(0, { timeout: 30000 });
   assert.ok((await snapshot()).conversations.some((item) => item.id === 'legacy-conversation'));
   const saved = JSON.parse(await readFile(path.join(legacyProfile, 'workspace.json'), 'utf8'));
   assert.equal(saved.settings.workspace, workspace);

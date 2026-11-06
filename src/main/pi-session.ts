@@ -1,6 +1,9 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { promisify } from 'node:util';
 import path from 'node:path';
+import { piIsolationArguments } from './agent-discovery';
+import { cliEnvironment } from './agent-process';
 import type { AgentSession, AgentSessionOptions } from './agent-session';
 import type { AgentEvent, BrowserTool, ElementRef, ToolCall } from '../shared/types';
 import {
@@ -35,6 +38,7 @@ interface Run {
 export class PiSession implements AgentSession {
   private child?: ChildProcessWithoutNullStreams;
   private startup?: Promise<void>;
+  private startupAbort = new AbortController();
   private ready = false;
   private closed = false;
   private id?: string;
@@ -97,15 +101,31 @@ export class PiSession implements AgentSession {
     if (selection) await this.selectModel(selection);
   }
   private async start() {
+    let help: string;
+    try {
+      help = (
+        await promisify(execFile)(this.options.executablePath, ['--help'], {
+          timeout: 8000,
+          maxBuffer: 256 * 1024,
+          signal: this.startupAbort.signal,
+          env: cliEnvironment(this.options.executablePath, true),
+        })
+      ).stdout;
+    } catch {
+      this.shutdown('无法检查本机 Pi 的启动参数');
+      throw new Error('无法检查本机 Pi 的启动参数');
+    }
+    const isolation = piIsolationArguments(help);
+    if (!isolation) {
+      this.shutdown('当前 Pi 版本无法确认扩展与 MCP 隔离，请更新 CLI');
+      throw new Error('当前 Pi 版本无法确认扩展与 MCP 隔离，请更新 CLI');
+    }
+    if (this.closed) throw new Error('Pi 会话已关闭');
     const id = this.id ?? randomUUID();
     const args = [
       '--mode',
       'rpc',
-      '--no-extensions',
-      '--no-mcp',
-      '--no-skills',
-      '--no-prompt-templates',
-      '--no-approve',
+      ...isolation,
       '--extension',
       this.options.permissionsExtensionPath!,
       '--tools',
@@ -572,6 +592,7 @@ export class PiSession implements AgentSession {
     if (this.closed) return;
     this.cancelRequests();
     this.closed = true;
+    this.startupAbort.abort();
     this.ready = false;
     for (const pending of this.pending.values()) {
       clearTimeout(pending.timer);

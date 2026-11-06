@@ -51,6 +51,8 @@ interface Run {
   escalation?: ReturnType<typeof setTimeout>;
   killStarted?: boolean;
   policyDirectory?: string;
+  workspaceTrusted?: boolean;
+  workspaceTrust?: { id: string; resolve(): void };
 }
 
 /** One native JSONL print process per turn; only native IDs may be resumed. No host tool bridge. */
@@ -211,6 +213,7 @@ export class StreamCliSession implements AgentSession {
         '--stream-partial-output',
         '--mode',
         'ask',
+        ...(run.workspaceTrusted ? ['--trust'] : []),
         ...resume,
         ...model,
       ];
@@ -248,6 +251,28 @@ export class StreamCliSession implements AgentSession {
     ];
   }
   private async launch(run: Run, prompt: string, selection?: ModelSelection) {
+    if (this.options.cli === 'cursor') {
+      await new Promise<void>((resolve) => {
+        const id = `cursor-workspace:${run.turnId}`;
+        run.workspaceTrust = { id, resolve };
+        run.deadline = setTimeout(
+          () => this.stop(run, 'Cursor 工作目录确认已超时'),
+          15 * 60 * 1000,
+        );
+        this.emit({ type: 'status', status: 'waiting', label: '等待确认 Cursor 工作目录' });
+        this.emit({
+          type: 'approval',
+          request: {
+            id,
+            kind: 'other',
+            title: '允许 Cursor 使用这个工作目录？',
+            detail: `${this.options.workspace}\n\n仅限本次任务。Cursor 将读取目录并加载项目配置；其中的 hooks 或 MCP 可能执行代码，请仅确认你信任的目录。模型仍以 Ask 只读模式运行。`,
+          },
+        });
+      });
+      if (this.active !== run || this.closed || !run.workspaceTrusted) return;
+      clearTimeout(run.deadline);
+    }
     const args = await this.arguments(run, selection);
     if (this.active !== run || this.closed) {
       await this.removePolicy(run);
@@ -264,7 +289,30 @@ export class StreamCliSession implements AgentSession {
       stdio: 'pipe',
     });
     run.child = child;
-    child.stderr.resume(); // Provider diagnostics can contain credentials. Never forward raw stderr.
+    let diagnostic: 'quota' | 'authentication' | undefined;
+    let diagnosticTail = '';
+    child.stderr.on('data', (chunk: Buffer) => {
+      // Classify bounded diagnostics without exposing provider text, headers or credentials.
+      diagnosticTail = (diagnosticTail + chunk.toString('utf8')).slice(-2048);
+      if (
+        /usage limit (?:reached|exceeded)|quota (?:has been )?exceeded|insufficient_quota/i.test(
+          diagnosticTail,
+        )
+      )
+        diagnostic = 'quota';
+      else if (
+        /authentication required|not (?:logged|signed) in|please set an auth method/i.test(
+          diagnosticTail,
+        )
+      )
+        diagnostic ??= 'authentication';
+    });
+    const failureMessage = () =>
+      diagnostic === 'quota'
+        ? '当前模型服务额度已用尽，请检查账户额度后重试'
+        : diagnostic === 'authentication'
+          ? 'CLI 需要登录或 API 配置，请先在终端完成后重试'
+          : 'CLI 执行失败，请在终端检查登录与模型配置';
     child.stdin.on('error', () => this.stop(run, 'CLI 输入连接中断'));
     child.on('error', () => this.stop(run, '无法启动本机 CLI，请检查安装'));
     let buffer = '';
@@ -301,13 +349,16 @@ export class StreamCliSession implements AgentSession {
       const failure =
         run.failure ??
         (code !== 0 || signal
-          ? 'CLI 执行失败，请在终端检查登录与模型配置'
+          ? failureMessage()
           : !run.initialized || !run.terminal
             ? 'CLI 未返回完整的本轮结果，不能确认任务完成'
             : undefined);
       this.finish(run, failure);
     });
-    run.startup = setTimeout(() => this.stop(run, 'CLI 未及时返回原生会话，已停止'), 30000);
+    run.startup = setTimeout(
+      () => this.stop(run, diagnostic ? failureMessage() : 'CLI 未及时返回原生会话，已停止'),
+      this.options.cli === 'cursor' ? 60000 : 30000,
+    );
     run.deadline = setTimeout(() => this.stop(run, 'CLI 任务超时，已停止'), 15 * 60 * 1000);
     child.stdin.end(prompt);
   }
@@ -587,8 +638,20 @@ export class StreamCliSession implements AgentSession {
     }
     // Cursor's documented print result has no token usage or response-model evidence.
   }
-  resolveApproval(_id: string, _approved: boolean): void {
-    throw new Error('此 CLI 尚未接通宿主审批');
+  resolveApproval(id: string, approved: boolean): void {
+    const run = this.active;
+    const pending = run?.workspaceTrust;
+    if (!run || this.closed || !pending || pending.id !== id) {
+      if (id.startsWith('cursor-workspace:')) throw new Error('审批已失效');
+      throw new Error('此 CLI 尚未接通原生工具审批');
+    }
+    run.workspaceTrust = undefined;
+    this.emit({ type: 'request-resolved', id });
+    if (approved) {
+      run.workspaceTrusted = true;
+      this.emit({ type: 'status', status: 'starting', label: 'Cursor 正在启动' });
+    } else this.stop(run, '已拒绝 Cursor 使用此工作目录');
+    pending.resolve();
   }
   resolveUserInput(_id: string, _answers: Record<string, string[]>): void {
     throw new Error('此 CLI 尚未接通原生提问');
@@ -637,6 +700,12 @@ export class StreamCliSession implements AgentSession {
     clearTimeout(run.deadline);
     // Do not cancel escalation: surviving descendants must still receive SIGKILL after leader exit.
     this.active = undefined;
+    if (run.workspaceTrust) {
+      const pending = run.workspaceTrust;
+      run.workspaceTrust = undefined;
+      this.emit({ type: 'request-resolved', id: pending.id });
+      pending.resolve();
+    }
     void this.removePolicy(run).catch(() => {});
     if (failure) {
       this.closed = true;

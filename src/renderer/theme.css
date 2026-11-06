@@ -74,6 +74,9 @@
   --font-sans:
     -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Helvetica Neue', sans-serif;
   --font-mono: 'SFMono-Regular', Menlo, Consolas, monospace;
+  --font-greeting: 'Snell Roundhand', 'Apple Chancery', 'Segoe Script', cursive;
+  --onboarding-avatar-size: 40px;
+  --onboarding-welcome-logo-size: 132px;
 }
 
 :root.dark,

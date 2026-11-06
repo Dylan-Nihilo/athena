@@ -4,7 +4,7 @@
  */
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { _electron as electron, expect, type ElectronApplication } from '@playwright/test';
@@ -16,7 +16,7 @@ if (process.env.WORKBENCH_LIVE_PI !== '1')
     'Set WORKBENCH_LIVE_PI=1 to authorize real Pi model calls. Run npm run build first.',
   );
 const root = process.cwd();
-const directory = await mkdtemp(path.join(os.tmpdir(), 'athena-cli-ui-'));
+const directory = await realpath(await mkdtemp(path.join(os.tmpdir(), 'athena-cli-ui-')));
 const workspace = path.join(directory, 'project');
 const userData = path.join(directory, 'profile');
 const output = path.resolve('test-results/mainstream-cli-ui');
@@ -38,7 +38,7 @@ await writeFile(
     onboarding: {
       version: 1,
       status: 'complete',
-      stage: 'complete',
+      stage: 'ready',
       required: false,
       workspaceConfirmed: workspace,
       browserDeferred: true,
@@ -196,8 +196,12 @@ try {
   assert.ok(firstReply.model?.model);
   evidence.model = firstReply.model;
   const execution = page.getByRole('region', { name: '任务执行', exact: true });
-  await expect(execution.getByText('读取文件', { exact: true })).toBeVisible();
-  await expect(execution.getByText('写入文件', { exact: true })).toBeVisible();
+  await expect(
+    execution.getByRole('button', { name: '读取文件 已返回', exact: true }).first(),
+  ).toBeVisible();
+  await expect(
+    execution.getByRole('button', { name: '写入文件 已返回', exact: true }).first(),
+  ).toBeVisible();
   await expect
     .poll(async () => (await snapshot()).codexConnection?.status, { timeout: 15000 })
     .toBe('ready');

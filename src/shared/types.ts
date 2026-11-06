@@ -466,6 +466,8 @@ export interface FeishuMessage {
 }
 export interface Settings {
   workspace: string;
+  /** Personal conversations use an app-owned directory, without selecting a project. */
+  workspaceMode?: 'project' | 'personal';
   browserPath?: string;
   agent: AgentId;
   modelSelection?: import('./usage').ModelSelection;

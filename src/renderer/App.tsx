@@ -129,11 +129,14 @@ export default function App() {
   const [initialOnboarding, setInitialOnboarding] = useState(true);
   const [openingOnboarding, setOpeningOnboarding] = useState(false);
   const [workbenchMounted, setWorkbenchMounted] = useState(false);
+  const [onboardingTransition, setOnboardingTransition] = useState(false);
   const onboardingStateRef = useRef<OnboardingState | undefined>(undefined);
   const [localUserName, setLocalUserName] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [showUsage, setShowUsage] = useState(false);
   const [settings, setSettings] = useState<Settings>({ workspace: '', agent: 'codex' });
+  const workspaceLabel =
+    settings.workspaceMode === 'personal' ? '不绑定文件夹' : basename(settings.workspace);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [codexConnection, setCodexConnection] = useState<CodexConnectionState>({ status: 'idle' });
   const [browser, setBrowser] = useState<BrowserState>(emptyBrowser);
@@ -765,9 +768,16 @@ export default function App() {
       workspacePath = snapshot.settings.workspace;
       setSettings(snapshot.settings);
       setAgents(snapshot.agents);
+      setBrowser(snapshot.browser);
+      setNeo(snapshot.neo ?? { status: 'stopped' });
+      lastFrame.current = snapshot.browserFrame ?? lastFrame.current;
       if (snapshot.onboarding) acceptOnboardingState(snapshot.onboarding);
     } catch (error) {
-      setSettings((previous) => ({ ...previous, workspace: workspacePath }));
+      setSettings((previous) => ({
+        ...previous,
+        workspace: workspacePath,
+        workspaceMode: next.workspace.mode,
+      }));
       showToast(errorText(error), true);
     }
     if (workspacePath !== settings.workspace) {
@@ -780,12 +790,18 @@ export default function App() {
       setInspectorOpen(false);
     }
     setWorkbenchMounted(true);
-    setOnboardingVisible(false);
     if (initialOnboarding) {
       setSettingsTab(null);
       setShowUsage(false);
-      setBrowserVisible(false);
+      setBrowserVisible(next.status === 'complete' && next.browser.status === 'ready');
+      if (next.status === 'complete') {
+        setOnboardingTransition(true);
+        if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+          await new Promise((resolve) => setTimeout(resolve, 650));
+      }
     }
+    setOnboardingVisible(false);
+    setOnboardingTransition(false);
   };
   const openSettings = (tab: SettingsTab) => {
     setShowUsage(false);
@@ -996,11 +1012,15 @@ export default function App() {
                 <Card.Content>
                   <Icon icon={Folder01Icon} size={20} />
                   <div>
-                    <span>工作目录</span>
-                    <strong>{settings.workspace || '尚未选择工作目录'}</strong>
+                    <span>项目文件夹（可选）</span>
+                    <strong>
+                      {settings.workspaceMode === 'personal'
+                        ? '未绑定项目文件夹'
+                        : settings.workspace || '尚未选择工作目录'}
+                    </strong>
                   </div>
                   <ActionButton variant="secondary" onPress={() => void workspace()}>
-                    更换工作目录
+                    {settings.workspaceMode === 'personal' ? '选择项目文件夹' : '更换工作目录'}
                   </ActionButton>
                 </Card.Content>
               </Card>
@@ -1294,7 +1314,8 @@ export default function App() {
       {workbenchMounted && (
         <div
           className="app-workbench"
-          hidden={onboardingVisible}
+          hidden={onboardingVisible && !onboardingTransition}
+          data-onboarding-enter={onboardingTransition}
           inert={onboardingVisible}
           aria-hidden={onboardingVisible || undefined}
         >
@@ -1346,10 +1367,12 @@ export default function App() {
               <ActionButton
                 className="workspace-selector"
                 onPress={() => void workspace()}
-                title={settings.workspace}
+                title={
+                  settings.workspaceMode === 'personal' ? '选择项目文件夹' : settings.workspace
+                }
               >
                 <Icon icon={Folder01Icon} size={16} />
-                <span>{basename(settings.workspace)}</span>
+                <span>{workspaceLabel}</span>
                 <Icon icon={ArrowDown01Icon} size={13} />
               </ActionButton>
               <div className="sidebar-section-label">对话</div>
@@ -1922,8 +1945,15 @@ export default function App() {
                     </div>
                     <div className="composer-footer">
                       <Icon icon={Folder01Icon} size={14} />
-                      <ActionButton onPress={() => void workspace()} title={settings.workspace}>
-                        {basename(settings.workspace)}
+                      <ActionButton
+                        onPress={() => void workspace()}
+                        title={
+                          settings.workspaceMode === 'personal'
+                            ? '选择项目文件夹'
+                            : settings.workspace
+                        }
+                      >
+                        {workspaceLabel}
                       </ActionButton>
                       <span>· 本机工作区</span>
                       {browser.recording && (

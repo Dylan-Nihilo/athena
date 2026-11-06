@@ -15,7 +15,8 @@ import {
   Tick02Icon,
 } from '@hugeicons-pro/core-stroke-rounded';
 import { ActionButton, Icon } from './ui';
-import { ChoiceSelect } from './ChoiceSelect';
+import { AgentIcon } from './AgentIcon';
+import { supportsBrowser } from '../shared/agents';
 import athenaLogo from './assets/brand/athena-profile.png';
 import type {
   OnboardingCommandPayloads,
@@ -30,6 +31,8 @@ type Screen =
   | 'resume'
   | 'connect'
   | 'detecting'
+  | 'agents'
+  | 'agentConnecting'
   | 'missing'
   | 'planLoading'
   | 'installPlan'
@@ -49,9 +52,13 @@ type Screen =
   | 'browserError'
   | 'ready'
   | 'readyWithoutBrowser'
+  | 'finishing'
   | 'cancelled'
   | 'error';
 type Intent =
+  | 'discover'
+  | 'select'
+  | 'personal'
   | 'detect'
   | 'plan'
   | 'install'
@@ -82,6 +89,7 @@ type Action = {
   ghost?: boolean;
   disabled?: boolean;
   interrupt?: boolean;
+  cancel?: boolean;
   run: (layoutId: string) => void;
 };
 
@@ -92,10 +100,11 @@ const icons = {
   folder: Folder01Icon,
   globe: Globe02Icon,
 };
-const setupSteps = ['认识', '连接', '工作区', '开始'] as const;
+const setupSteps = ['认识', '连接', '网页', '开始'] as const;
 const easing = [0.22, 1, 0.36, 1] as const;
 const pendingScreens = new Set<Screen>([
   'detecting',
+  'agentConnecting',
   'planLoading',
   'installing',
   'loginWait',
@@ -103,7 +112,17 @@ const pendingScreens = new Set<Screen>([
   'folderWait',
   'workspaceChecking',
   'browserPreparing',
+  'finishing',
 ]);
+const activityLabels: Partial<Record<Screen, string>> = {
+  detecting: '查看本机 Agent',
+  agentConnecting: '核对连接',
+  loginWait: '等你完成登录',
+  loginCheck: '确认登录结果',
+  workspaceChecking: '准备对话空间',
+  browserPreparing: '连接网页工具',
+  finishing: '确认准备结果',
+};
 const basename = (path: string) => path.split(/[\\/]/).filter(Boolean).pop() || '工作目录';
 const formatBytes = (value: number) =>
   value >= 1024 * 1024
@@ -144,7 +163,9 @@ function LoginCommand({
             onPress={async () => {
               setStatus('copying');
               try {
-                const copied = await window.workbench.invoke<boolean>('app:copy', { text: command });
+                const copied = await window.workbench.invoke<boolean>('app:copy', {
+                  text: command,
+                });
                 setStatus(copied ? 'copied' : 'error');
               } catch {
                 setStatus('error');
@@ -152,7 +173,9 @@ function LoginCommand({
             }}
           >
             <Icon
-              icon={status === 'copied' ? Tick02Icon : status === 'copying' ? Loading02Icon : CopyIcon}
+              icon={
+                status === 'copied' ? Tick02Icon : status === 'copying' ? Loading02Icon : CopyIcon
+              }
               size={16}
               className={status === 'copying' ? 'spin' : undefined}
             />
@@ -160,7 +183,9 @@ function LoginCommand({
         )}
       </div>
       <div className="onboarding-login-command-row">
-        <span className="onboarding-command-prompt" aria-hidden="true">$</span>
+        <span className="onboarding-command-prompt" aria-hidden="true">
+          $
+        </span>
         <code>{command}</code>
       </div>
       {active && status === 'error' && (
@@ -172,9 +197,42 @@ function LoginCommand({
   );
 }
 
+function MessageText({
+  text,
+  reveal,
+  delay,
+  as: Tag = 'p',
+}: {
+  text: string;
+  reveal: boolean;
+  delay: number;
+  as?: 'p' | 'span';
+}) {
+  const phrases = text.match(/[^，。！？；]+[，。！？；]?/gu) || [text];
+  return (
+    <Tag className="onboarding-message-text">
+      {phrases.map((phrase, index) => (
+        <motion.span
+          key={`${index}-${phrase}`}
+          initial={reveal ? { opacity: 0, y: 5 } : false}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.28, delay: reveal ? delay + index * 0.12 : 0, ease: easing }}
+        >
+          {phrase}
+        </motion.span>
+      ))}
+    </Tag>
+  );
+}
+
 function screenForState(state: OnboardingState, intent: Intent): Screen {
   if (state.operation) {
-    if (state.operation.kind === 'detect') return 'detecting';
+    if (state.operation.kind === 'detect')
+      return intent === 'complete'
+        ? 'finishing'
+        : intent === 'select'
+          ? 'agentConnecting'
+          : 'detecting';
     if (state.operation.kind === 'install-codex') return 'installing';
     if (state.operation.kind === 'login')
       return state.login?.status === 'checking' ? 'loginCheck' : 'loginWait';
@@ -194,6 +252,7 @@ function screenForState(state: OnboardingState, intent: Intent): Screen {
   if (state.browser.status === 'error' && (intent === 'browser' || intent === 'install'))
     return 'browserError';
   if (state.error) return 'error';
+  if (intent === 'discover') return 'agents';
   if (intent === 'pick') return 'folder';
   if (state.selectedAgent && state.selectedAgent !== 'codex') {
     if (!state.executor?.available || !state.executor.supported) return 'missing';
@@ -244,7 +303,14 @@ function content(
   const connection: StatusCard = {
     icon: 'terminal',
     title: external ? name : 'Codex',
-    detail: external ? state.executor?.path : state.codex.path || state.codex.version,
+    detail:
+      screen === 'details'
+        ? external
+          ? state.executor?.path
+          : state.codex.path || state.codex.version
+        : external
+          ? state.executor?.version
+          : state.codex.version,
     label: external
       ? !state.executor?.available
         ? '未就绪'
@@ -275,8 +341,14 @@ function content(
   }
   const directory: StatusCard = {
     icon: 'folder',
-    title: basename(state.workspace.candidate?.path || state.workspace.path),
-    detail: state.workspace.candidate?.path || state.workspace.path,
+    title:
+      state.workspace.mode === 'personal' && !state.workspace.candidate
+        ? '不绑定项目文件夹'
+        : basename(state.workspace.candidate?.path || state.workspace.path),
+    detail:
+      state.workspace.mode === 'personal' && !state.workspace.candidate
+        ? '先开始对话，需要时再选择项目'
+        : state.workspace.candidate?.path || state.workspace.path,
     label: state.workspace.candidate
       ? '待确认'
       : state.workspace.status === 'ready'
@@ -285,16 +357,9 @@ function content(
   };
   if (
     external &&
-    [
-      'connect',
-      'detecting',
-      'missing',
-      'login',
-      'loginWait',
-      'loginCheck',
-      'connected',
-      'details',
-    ].includes(screen)
+    ['connect', 'missing', 'login', 'loginWait', 'loginCheck', 'connected', 'details'].includes(
+      screen,
+    )
   ) {
     if (screen === 'missing')
       return {
@@ -321,23 +386,17 @@ function content(
         cards: [connection],
       };
     }
-    if (screen === 'detecting')
-      return {
-        title: '我来看看。',
-        lines: [`正在检查本机 ${name} 与工作目录。`],
-        cards: [pendingCard],
-      };
     return {
       title: screen === 'connected' ? `已找到本机 ${name}。` : `使用本机 ${name}。`,
-      lines: ['沿用你已有的登录、模型与服务配置。', '我们再确认工作的地方。'],
+      lines: ['沿用你已有的配置。想先聊聊，还是选一个项目一起做？'],
       cards: [connection],
     };
   }
   switch (screen) {
     case 'welcome':
       return {
-        title: '你好，我是 Athena。',
-        lines: ['从第一个想法，到把事情做好。', '很高兴，能和你一起开始。'],
+        title: 'hello, Athena.',
+        lines: ['你好，我是 Athena。', '从第一个想法，到一起把事情做好。'],
       };
     case 'about':
       return {
@@ -352,15 +411,30 @@ function content(
     case 'connect':
       return {
         title: '先让我们连接起来。',
-        lines: ['我通过你电脑上的 Codex 执行任务。', '先看看它是否已经准备好了。'],
-        cards: [
-          { icon: 'terminal', title: '本机 Codex', detail: '检查安装和登录状态', label: '待检查' },
-        ],
+        lines: ['先看看这台 Mac 上有哪些 AI Agent。', '你可以选择自己熟悉的那一个。'],
       };
     case 'detecting':
       return {
-        title: '我来看看。',
-        lines: ['正在检查本机 Codex，以及它的登录状态。'],
+        title: '我先看看，你的 Mac 上有哪些 AI Agent。',
+        lines: [],
+        cards: [pendingCard],
+      };
+    case 'agents': {
+      const installed = state.agents?.filter((agent) => agent.available) ?? [];
+      return {
+        title: installed.length ? '找到了。你想用哪一位？' : '先准备一位 AI Agent。',
+        lines: installed.length
+          ? ['选一个就好，我会沿用它已有的配置。']
+          : [
+              '还没有检测到本机 AI Agent。',
+              '可以先安装 Codex，或在终端安装你熟悉的 Agent 后重新检查。',
+            ],
+      };
+    }
+    case 'agentConnecting':
+      return {
+        title: '好，我来接上它。',
+        lines: [],
         cards: [pendingCard],
       };
     case 'missing':
@@ -442,9 +516,8 @@ function content(
     case 'connected':
       return {
         title: '连接好了。',
-        lines: ['可以使用本机 Codex 的现有登录。', '我们再选一个工作的地方。'],
+        lines: ['想先聊聊，还是选一个项目一起做？'],
         cards: [connection],
-        note: '这次检查不会发起模型任务。执行任务时使用对应账号的模型配额。',
       };
     case 'details':
       return {
@@ -459,7 +532,7 @@ function content(
     case 'folder':
       return {
         title: '我们在哪里开始？',
-        lines: ['选择你想处理的项目文件夹。', '它会成为任务默认使用的工作目录，以后可以随时更换。'],
+        lines: ['不选文件夹，也能先开始对话。', '如果这次想处理代码，可以选择一个项目。'],
         cards: state.workspace.status === 'ready' ? [directory] : undefined,
         note: '选择目录后，我会先确认它是否可访问。',
       };
@@ -488,10 +561,12 @@ function content(
       };
     case 'workspaceChecking':
       return {
-        title: '正在检查这个工作目录。',
-        lines: ['如果 macOS 显示访问提示，请核对目录和应用名称后决定。'],
+        title:
+          state.operation?.phase === 'preparing-personal-workspace'
+            ? '好，我们就从对话开始。'
+            : '我确认一下，这个文件夹能不能使用。',
+        lines: [],
         cards: [pendingCard],
-        note: '选择工作目录不等于授权任意文件操作。',
       };
     case 'folderError':
       return {
@@ -504,10 +579,12 @@ function content(
       };
     case 'browser':
       return {
-        title: '也把网页工作准备好？',
+        title: '接下来，把网页也接上。',
         lines: [
-          '在 Athena 里打开网页、调整元素，或录下一段操作。',
-          '这一步也可以留到第一次使用网页功能时。',
+          '这样，你就能一边聊，一边操作右侧的页面。',
+          ...(!supportsBrowser(state.selectedAgent || 'codex')
+            ? ['想让我帮你操作网页时，进入工作台后新建一个 Codex 对话就好。']
+            : []),
         ],
         cards: [
           {
@@ -524,8 +601,8 @@ function content(
       };
     case 'browserPreparing':
       return {
-        title: '正在准备网页工作。',
-        lines: ['我会按实际检查结果继续。'],
+        title: '我正在打开我们的第一页，稍等一下。',
+        lines: [],
         cards: [pendingCard],
       };
     case 'browserError':
@@ -539,22 +616,37 @@ function content(
     case 'ready':
       return {
         title: '准备好了，轮到你的想法。',
-        lines: ['连接、工作目录和网页工具都已就绪。', '你随时可以在设置中调整它们。'],
-        cards: [
-          connection,
-          directory,
-          { icon: 'globe', title: '网页工具', detail: 'BrowserOS neo 已就绪', label: '完成' },
-        ],
+        lines: ['你的 Agent 和网页工具都已就绪。', '走吧，Athena 的第一页正在等你。'],
+        cards: context.existingWorkbench
+          ? [
+              connection,
+              directory,
+              { icon: 'globe', title: '网页工具', detail: 'BrowserOS neo 已就绪', label: '完成' },
+            ]
+          : undefined,
       };
     case 'readyWithoutBrowser':
       return {
         title: '准备好了，轮到你的想法。',
-        lines: ['连接和工作目录已经就绪。', '网页工具可以在第一次用到时再准备。'],
-        cards: [
-          connection,
-          directory,
-          { icon: 'globe', title: '网页工具', detail: '以后可以在设置中准备', label: '稍后准备' },
-        ],
+        lines: ['已经可以开始对话。', '网页工具可以在第一次用到时再准备。'],
+        cards: context.existingWorkbench
+          ? [
+              connection,
+              directory,
+              {
+                icon: 'globe',
+                title: '网页工具',
+                detail: '以后可以在设置中准备',
+                label: '稍后准备',
+              },
+            ]
+          : undefined,
+      };
+    case 'finishing':
+      return {
+        title: '最后确认一下，我们就可以开始了。',
+        lines: [],
+        cards: [pendingCard],
       };
     case 'cancelled':
       return {
@@ -591,6 +683,9 @@ export function Onboarding({
     { id: 'message-0', role: 'assistant', screen: firstScreen, state: structuredClone(state) },
   ]);
   const [requestPending, setRequestPending] = useState(false);
+  const [welcomeReady, setWelcomeReady] = useState(
+    firstScreen !== 'welcome' || Boolean(reducedMotion),
+  );
   const [leaving, setLeaving] = useState(false);
   const [requestError, setRequestError] = useState('');
   const [scrolled, setScrolled] = useState(false);
@@ -614,6 +709,10 @@ export function Onboarding({
   const automaticScroll = useRef(false);
   const userPausedScroll = useRef(false);
   const current = entries.at(-1) as AssistantEntry;
+  const enterAfterReply = useRef<() => void>(() => {});
+  useEffect(() => {
+    if (reducedMotion) setWelcomeReady(true);
+  }, [reducedMotion]);
 
   const present = useCallback((screen: Screen, snapshot: OnboardingState) => {
     const phase =
@@ -700,7 +799,7 @@ export function Onboarding({
   const run = async <K extends keyof OnboardingCommandPayloads>(
     command: K,
     payload: OnboardingCommandPayloads[K],
-    label: string,
+    label: string | undefined,
     waiting: Screen,
     nextIntent: Intent,
     layoutId?: string,
@@ -724,7 +823,7 @@ export function Onboarding({
     setRequestError('');
     observingHost.current = true;
     intent.current = nextIntent;
-    reply(label, layoutId);
+    if (label) reply(label, layoutId);
     present(waiting, currentState.current);
     try {
       const next = await window.workbench.invoke<OnboardingState>(command, payload);
@@ -823,9 +922,30 @@ export function Onboarding({
     run: (id) => void run('onboarding:refresh', undefined, '重新检查', 'detecting', 'detect', id),
   };
   const chooseFolder: Action = {
-    label: '选择文件夹',
+    label: '选择项目文件夹',
     run: (id) =>
-      void run('onboarding:workspace/pick', undefined, '选择文件夹', 'folderWait', 'pick', id),
+      void run('onboarding:workspace/pick', undefined, '选择项目文件夹', 'folderWait', 'pick', id),
+  };
+  const skipFolder: Action = {
+    label: '先不选文件夹',
+    run: (id) =>
+      void run(
+        'onboarding:workspace/skip',
+        undefined,
+        '先不选文件夹',
+        'workspaceChecking',
+        'personal',
+        id,
+      ),
+  };
+  const chooseAgent: Action = {
+    label: '换一个 Agent',
+    ghost: true,
+    run: (id) => local('换一个 Agent', 'agents', id),
+  };
+  const discover: Action = {
+    label: '开始配置',
+    run: (id) => void run('onboarding:refresh', undefined, '开始配置', 'detecting', 'discover', id),
   };
   const skipBrowser: Action = {
     label: '以后再说',
@@ -870,6 +990,7 @@ export function Onboarding({
         });
       if (state.operation.cancelable)
         result.push({
+          cancel: true,
           label:
             state.operation.kind === 'login'
               ? '取消登录'
@@ -882,7 +1003,7 @@ export function Onboarding({
             void run(
               'onboarding:cancel',
               { operationId: state.operation!.id },
-              '取消这次操作',
+              '先停一下',
               current.screen,
               'cancel',
               id,
@@ -904,11 +1025,12 @@ export function Onboarding({
               ? '我已登录，重新检查'
               : check.label,
         },
+        chooseAgent,
       ];
     switch (current.screen) {
       case 'welcome':
         return [
-          { label: '你好，Athena', run: (id) => local('你好，Athena', 'connect', id) },
+          discover,
           {
             label: '你能帮我做什么？',
             ghost: true,
@@ -916,21 +1038,32 @@ export function Onboarding({
           },
         ];
       case 'about':
-        return [{ label: '好，一起开始', run: (id) => local('好，一起开始', 'connect', id) }];
+        return [discover];
       case 'connect':
+        return [discover];
+      case 'agents':
         return [
+          ...((state.agents || []).some((agent) => agent.available && agent.supported)
+            ? []
+            : [
+                {
+                  label: '准备安装 Codex',
+                  run: (id: string) =>
+                    void run(
+                      'onboarding:plan-install',
+                      { kind: 'codex' },
+                      '准备安装 Codex',
+                      'planLoading',
+                      'plan',
+                      id,
+                    ),
+                },
+              ]),
           {
-            ...check,
-            label: `检查本机 ${state.executor?.name || 'Codex'}`,
+            label: '重新检测',
+            ghost: true,
             run: (id) =>
-              void run(
-                'onboarding:refresh',
-                undefined,
-                `检查本机 ${state.executor?.name || 'Codex'}`,
-                'detecting',
-                'detect',
-                id,
-              ),
+              void run('onboarding:refresh', undefined, '重新检测', 'detecting', 'discover', id),
           },
         ];
       case 'resume':
@@ -993,10 +1126,12 @@ export function Onboarding({
               void run('onboarding:login/start', undefined, '登录 Codex', 'loginWait', 'login', id),
           },
           { ...check, label: '重新检查已有登录', ghost: true },
+          chooseAgent,
         ];
       case 'connected':
         return [
-          { label: '使用这个连接', run: (id) => local('使用这个连接', 'folder', id) },
+          skipFolder,
+          { ...chooseFolder, ghost: true },
           { label: '查看连接详情', ghost: true, run: (id) => local('查看连接详情', 'details', id) },
         ];
       case 'details':
@@ -1010,7 +1145,7 @@ export function Onboarding({
               { label: '使用当前目录', run: (id) => local('使用当前目录', 'browser', id) },
               { ...chooseFolder, label: '换一个文件夹', ghost: true },
             ]
-          : [chooseFolder];
+          : [skipFolder, { ...chooseFolder, ghost: true }];
       case 'folderConfirm':
         return state.workspace.candidate
           ? [
@@ -1032,6 +1167,7 @@ export function Onboarding({
       case 'folderError':
         return [
           { ...chooseFolder, label: '重新选择目录' },
+          { ...skipFolder, ghost: true },
           ...(state.workspace.candidate
             ? [
                 {
@@ -1078,9 +1214,10 @@ export function Onboarding({
         ];
       case 'ready':
       case 'readyWithoutBrowser':
+        if (initial) return [];
         return [
           {
-            label: '开始吧',
+            label: '进入 Athena',
             disabled: !state.coreReady,
             run: (id) =>
               state.status === 'complete'
@@ -1088,7 +1225,7 @@ export function Onboarding({
                 : void run(
                     'onboarding:complete',
                     undefined,
-                    '开始吧',
+                    '进入 Athena',
                     current.screen,
                     'complete',
                     id,
@@ -1102,36 +1239,80 @@ export function Onboarding({
   };
   const viewContext = { hasDraft, existingWorkbench: !initial };
   const currentView = content(current.screen, state, viewContext);
+  const currentActions = actions();
+  const cancelAction = currentActions.find((action) => action.cancel);
+  enterAfterReply.current = () => {
+    const snapshot = currentState.current;
+    if (pending.current || exiting.current || snapshot.operation || !snapshot.coreReady) return;
+    if (!followLatest.current || userPausedScroll.current) return;
+    if (snapshot.status === 'complete') exitNow(snapshot);
+    else
+      void run(
+        'onboarding:complete',
+        undefined,
+        undefined,
+        'finishing',
+        'complete',
+        undefined,
+        true,
+      );
+  };
+  useEffect(() => {
+    if (
+      !initial ||
+      !['ready', 'readyWithoutBrowser'].includes(current.screen) ||
+      !state.coreReady ||
+      state.operation ||
+      requestPending ||
+      showLatest ||
+      leaving
+    )
+      return;
+    // Browser frame renders must not restart the final reply's handoff timing.
+    const timer = setTimeout(() => enterAfterReply.current(), reducedMotion ? 0 : 900);
+    return () => clearTimeout(timer);
+  }, [
+    initial,
+    current.id,
+    current.screen,
+    state.status,
+    state.coreReady,
+    state.operation?.id,
+    requestPending,
+    showLatest,
+    leaving,
+    reducedMotion,
+  ]);
   const stage = ['welcome', 'about'].includes(current.screen)
     ? 0
-    : ['ready', 'readyWithoutBrowser'].includes(current.screen) ||
+    : ['ready', 'readyWithoutBrowser', 'finishing'].includes(current.screen) ||
         (intent.current === 'complete' && state.operation)
       ? 3
-      : [
-            'folder',
-            'folderWait',
-            'folderConfirm',
-            'workspaceChecking',
-            'folderError',
-            'browser',
-            'browserPreparing',
-            'browserError',
-          ].includes(current.screen) ||
+      : ['browser', 'browserPreparing', 'browserError'].includes(current.screen) ||
           (current.screen === 'installPlan' && state.plan?.kind === 'browser')
         ? 2
         : 1;
   return (
-    <section
+    <motion.section
       className="onboarding"
       aria-label="首次准备"
       data-scrolled={scrolled}
       data-animate-welcome={initial && firstScreen === 'welcome'}
+      data-welcome={current.screen === 'welcome'}
+      data-intro-ready={welcomeReady}
+      data-leaving={leaving}
+      inert={leaving}
+      initial={false}
+      animate={{ opacity: leaving ? 0 : 1, scale: leaving && !reducedMotion ? 1.025 : 1 }}
+      transition={{ duration: reducedMotion ? 0 : 0.55, ease: easing }}
     >
       <header className="onboarding-topbar window-drag">
         <strong>Athena</strong>
         <span>{initial ? '初次见面' : '继续准备'}</span>
         <div className="onboarding-top-progress">
-          <span>第 {stage + 1} / {setupSteps.length} 步 · {setupSteps[stage]}</span>
+          <span>
+            第 {stage + 1} / {setupSteps.length} 步 · {setupSteps[stage]}
+          </span>
           <div
             className="onboarding-progress-track"
             role="progressbar"
@@ -1178,7 +1359,7 @@ export function Onboarding({
         }}
       >
         <LayoutGroup id="onboarding-dialogue">
-          <div className="onboarding-transcript">
+          <motion.div layout="position" className="onboarding-transcript">
             {entries.map((entry, index) => {
               if (entry.role === 'user')
                 return (
@@ -1188,45 +1369,131 @@ export function Onboarding({
                     className="onboarding-message user"
                     initial={reducedMotion ? false : { opacity: 0 }}
                     animate={{ opacity: 1 }}
-                    transition={{ duration: reducedMotion ? 0 : 0.34, ease: easing }}
+                    transition={{ duration: reducedMotion ? 0 : 0.5, ease: easing }}
                     aria-label="你的选择"
                   >
                     <p>{entry.text}</p>
                   </motion.article>
                 );
               const active = index === entries.length - 1;
-              const view = content(entry.screen, active ? state : entry.state, viewContext);
+              const entryState = active ? state : entry.state;
+              const view = content(entry.screen, entryState, viewContext);
+              const activity = view.cards?.find((card) => card.icon === 'pending');
+              const cards = view.cards?.filter((card) => card.icon !== 'pending');
               const welcome = entry.screen === 'welcome';
               return (
                 <motion.article
                   key={entry.id}
+                  layout="position"
                   ref={active ? currentArticle : undefined}
                   className={`onboarding-message assistant ${active ? 'is-current' : 'is-history'} ${welcome ? 'is-welcome' : ''}`}
                   data-screen={entry.screen}
+                  data-pending={active && Boolean(state.operation)}
                   initial={welcome || reducedMotion ? false : { opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: reducedMotion ? 0 : 0.26, ease: easing }}
+                  transition={{ duration: reducedMotion ? 0 : 0.42, ease: easing }}
                 >
-                  <div className="onboarding-message-heading">
-                    <img src={athenaLogo} alt="Athena" />
-                    <h1 ref={active ? heading : undefined} tabIndex={-1}>
-                      {view.title}
-                    </h1>
-                  </div>
+                  <motion.div layout="position" className="onboarding-message-heading">
+                    <motion.img
+                      layout
+                      src={athenaLogo}
+                      alt="Athena"
+                      initial={
+                        welcome && !reducedMotion ? { opacity: 0, scale: 0.88, y: 18 } : false
+                      }
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      transition={{ duration: reducedMotion ? 0 : 0.75, ease: easing }}
+                    />
+                    <motion.h1
+                      ref={active ? heading : undefined}
+                      tabIndex={-1}
+                      initial={welcome && !reducedMotion ? { opacity: 0, y: 14 } : false}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{
+                        duration: 0.65,
+                        delay: welcome && !reducedMotion ? 0.4 : 0,
+                        ease: easing,
+                      }}
+                    >
+                      {welcome ? (
+                        view.title
+                      ) : (
+                        <MessageText
+                          as="span"
+                          text={view.title}
+                          reveal={active && !reducedMotion}
+                          delay={0}
+                        />
+                      )}
+                    </motion.h1>
+                  </motion.div>
                   <div className="onboarding-message-body">
-                    <div>
+                    <motion.div
+                      key={welcome ? 'welcome-copy' : entry.screen}
+                      initial={welcome && !reducedMotion ? { opacity: 0 } : false}
+                      animate={{ opacity: 1 }}
+                      transition={{ duration: 0.3, delay: welcome && !reducedMotion ? 0.9 : 0 }}
+                      onAnimationComplete={() => {
+                        if (welcome) setWelcomeReady(true);
+                      }}
+                    >
                       {view.lines.map((line, lineIndex) => (
-                        <p
-                          key={lineIndex}
-                          className={welcome ? 'onboarding-welcome-line' : undefined}
-                        >
-                          {line}
-                        </p>
+                        <MessageText
+                          key={line}
+                          text={line}
+                          reveal={active && !welcome && !reducedMotion}
+                          delay={0.08 + lineIndex * 0.16}
+                        />
                       ))}
-                    </div>
-                    {!!view.cards?.length && (
+                    </motion.div>
+                    {activity && (
+                      <div className="onboarding-activity" data-active={active}>
+                        <div className="onboarding-activity-row">
+                          <span className="onboarding-thinking-dots" aria-hidden="true">
+                            <i />
+                            <i />
+                            <i />
+                          </span>
+                          <span
+                            className="onboarding-activity-label"
+                            aria-live={active ? 'polite' : 'off'}
+                          >
+                            {entryState.operation?.phase === 'cancelling'
+                              ? '正在停下'
+                              : entry.screen === 'workspaceChecking' &&
+                                  entryState.operation?.phase !== 'preparing-personal-workspace'
+                                ? '检查文件夹'
+                                : activityLabels[entry.screen] || activity.title}
+                          </span>
+                          {active && cancelAction && (
+                            <motion.div layoutId={reducedMotion ? undefined : `${entry.id}-cancel`}>
+                              <Button
+                                className="onboarding-stop"
+                                size="sm"
+                                variant="ghost"
+                                aria-label={cancelAction.label}
+                                isDisabled={leaving || cancelAction.disabled}
+                                onPress={() => cancelAction.run(`${entry.id}-cancel`)}
+                              >
+                                停一下
+                              </Button>
+                            </motion.div>
+                          )}
+                        </div>
+                        {activity.detail && (
+                          <span className="onboarding-activity-detail">{activity.detail}</span>
+                        )}
+                        {entryState.operation && (
+                          <details className="onboarding-operation-detail">
+                            <summary>查看详情</summary>
+                            <p>{entryState.operation.message}</p>
+                          </details>
+                        )}
+                      </div>
+                    )}
+                    {!!cards?.length && (
                       <div className="onboarding-status-cards">
-                        {view.cards.map((card, cardIndex) => (
+                        {cards.map((card, cardIndex) => (
                           <Card key={cardIndex} className="onboarding-status-card">
                             <Card.Content className="onboarding-status-row">
                               <span className="onboarding-status-icon">
@@ -1254,7 +1521,11 @@ export function Onboarding({
                                           data-state={indicator.ready ? 'ready' : 'pending'}
                                         >
                                           <Icon
-                                            icon={indicator.ready ? CheckmarkCircle02Icon : AlertCircleIcon}
+                                            icon={
+                                              indicator.ready
+                                                ? CheckmarkCircle02Icon
+                                                : AlertCircleIcon
+                                            }
                                             size={14}
                                           />
                                           {indicator.label}
@@ -1271,7 +1542,9 @@ export function Onboarding({
                     {view.loginCommand && (
                       <ol className="onboarding-login-steps">
                         <li>
-                          <span className="onboarding-login-step-number" aria-hidden="true">1</span>
+                          <span className="onboarding-login-step-number" aria-hidden="true">
+                            1
+                          </span>
                           <div>
                             <strong>在终端运行登录命令</strong>
                             <p>打开 macOS「终端」，粘贴下方命令并按回车。</p>
@@ -1284,14 +1557,18 @@ export function Onboarding({
                           </div>
                         </li>
                         <li>
-                          <span className="onboarding-login-step-number" aria-hidden="true">2</span>
+                          <span className="onboarding-login-step-number" aria-hidden="true">
+                            2
+                          </span>
                           <div>
                             <strong>完成账号授权</strong>
                             <p>在打开的网页中完成登录授权，然后回到 Athena。</p>
                           </div>
                         </li>
                         <li>
-                          <span className="onboarding-login-step-number" aria-hidden="true">3</span>
+                          <span className="onboarding-login-step-number" aria-hidden="true">
+                            3
+                          </span>
                           <div>
                             <strong>检查登录结果</strong>
                             <p>点击「我已登录，重新检查」，确认连接后继续。</p>
@@ -1323,60 +1600,102 @@ export function Onboarding({
                         {requestError}
                       </p>
                     )}
-                    {active && !!state.agents?.length && (
-                      <ChoiceSelect
-                        label="新对话默认 CLI"
-                        value={state.selectedAgent || 'codex'}
-                        options={state.agents.map((agent) => ({
-                          value: agent.id,
-                          label: `${agent.name}${agent.available ? '' : ' · 未检测到'}`,
-                          disabled: !agent.available || !agent.supported,
-                        }))}
-                        isDisabled={leaving || requestPending || Boolean(state.operation)}
-                        onChange={(id) => {
-                          const agent = state.agents?.find((item) => item.id === id);
-                          if (agent)
-                            void run(
-                              'onboarding:agent',
-                              { id: agent.id },
-                              `使用本机 ${agent.name}`,
-                              'detecting',
-                              'detect',
-                            );
-                        }}
-                      />
-                    )}
-                    {active && (
-                      <div className="onboarding-actions">
-                        {actions().map((action, actionIndex) => {
-                          const id = `${entry.id}-choice-${actionIndex}`;
-                          return (
-                            <motion.div
-                              key={id}
-                              layoutId={reducedMotion ? undefined : id}
-                              className="onboarding-choice"
-                            >
-                              <Button
-                                variant={action.ghost ? 'ghost' : 'primary'}
-                                isDisabled={
-                                  leaving ||
-                                  action.disabled ||
-                                  (requestPending && !action.interrupt)
-                                }
-                                onPress={() => action.run(id)}
+                    {active && entry.screen === 'agents' && (
+                      <div
+                        className="onboarding-agent-list"
+                        role="group"
+                        aria-label="本机 AI Agent"
+                      >
+                        {(state.agents || [])
+                          .filter((agent) => agent.available)
+                          .map((agent, agentIndex) => {
+                            const id = `${entry.id}-agent-${agent.id}`;
+                            return (
+                              <motion.div
+                                key={agent.id}
+                                layoutId={reducedMotion ? undefined : id}
+                                initial={reducedMotion ? false : { opacity: 0, y: 12, scale: 0.97 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                transition={{
+                                  duration: 0.42,
+                                  delay: reducedMotion ? 0 : agentIndex * 0.07,
+                                  ease: easing,
+                                }}
                               >
-                                {action.label}
-                              </Button>
-                            </motion.div>
-                          );
-                        })}
+                                <Button
+                                  className="onboarding-agent-capsule"
+                                  variant="secondary"
+                                  aria-label={`选择 ${agent.name}`}
+                                  isDisabled={
+                                    !agent.supported ||
+                                    leaving ||
+                                    requestPending ||
+                                    Boolean(state.operation)
+                                  }
+                                  onPress={() =>
+                                    void run(
+                                      'onboarding:agent',
+                                      { id: agent.id },
+                                      `使用 ${agent.name}`,
+                                      'agentConnecting',
+                                      'select',
+                                      id,
+                                    )
+                                  }
+                                >
+                                  <AgentIcon agent={agent.id} size={22} />
+                                  <span>{agent.name}</span>
+                                  {!agent.supported ? (
+                                    <small>暂不支持</small>
+                                  ) : (
+                                    agent.authentication === 'missing' && <small>需登录</small>
+                                  )}
+                                </Button>
+                              </motion.div>
+                            );
+                          })}
                       </div>
                     )}
+                    {active &&
+                      (!welcome || welcomeReady) &&
+                      currentActions.some((action) => !activity || !action.cancel) && (
+                        <motion.div
+                          className="onboarding-actions"
+                          initial={reducedMotion ? false : { opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: 0.35, ease: easing }}
+                        >
+                          {currentActions
+                            .filter((action) => !activity || !action.cancel)
+                            .map((action, actionIndex) => {
+                              const id = `${entry.id}-choice-${actionIndex}`;
+                              return (
+                                <motion.div
+                                  key={id}
+                                  layoutId={reducedMotion ? undefined : id}
+                                  className="onboarding-choice"
+                                >
+                                  <Button
+                                    variant={action.ghost ? 'ghost' : 'primary'}
+                                    isDisabled={
+                                      leaving ||
+                                      action.disabled ||
+                                      (requestPending && !action.interrupt)
+                                    }
+                                    onPress={() => action.run(id)}
+                                  >
+                                    {action.label}
+                                  </Button>
+                                </motion.div>
+                              );
+                            })}
+                        </motion.div>
+                      )}
                   </div>
                 </motion.article>
               );
             })}
-          </div>
+          </motion.div>
         </LayoutGroup>
       </motion.div>
       <div ref={fade} className="onboarding-history-fade" aria-hidden="true" />
@@ -1387,28 +1706,30 @@ export function Onboarding({
         </Button>
       )}
       <footer className="onboarding-footer">
-        <Button
-          className="onboarding-skip-setup"
-          variant="secondary"
-          isDisabled={leaving || (requestPending && intent.current === 'defer')}
-          onPress={() =>
-            void run(
-              'onboarding:defer',
-              undefined,
-              '跳过设置',
-              current.screen,
-              'defer',
-              undefined,
-              true,
-            )
-          }
-        >
-          跳过设置
-        </Button>
+        {welcomeReady && (
+          <Button
+            className="onboarding-skip-setup"
+            variant="secondary"
+            isDisabled={leaving || (requestPending && intent.current === 'defer')}
+            onPress={() =>
+              void run(
+                'onboarding:defer',
+                undefined,
+                '跳过设置',
+                current.screen,
+                'defer',
+                undefined,
+                true,
+              )
+            }
+          >
+            跳过设置
+          </Button>
+        )}
       </footer>
       <p className="sr-only" role="status" aria-live="polite">
         {currentView.title}
       </p>
-    </section>
+    </motion.section>
   );
 }

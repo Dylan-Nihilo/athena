@@ -3,257 +3,409 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>今日清单 · 交互示例</title>
+    <meta name="color-scheme" content="light dark" />
+    <title>Athena · 从想法开始</title>
     <style>
+      :root {
+        color-scheme: light;
+        --surface: #fff;
+        --foreground: #171717;
+        --secondary: #666;
+        --soft: #f5f5f5;
+        --line: #e9e9e9;
+        --accent: #171717;
+        --accent-foreground: #fff;
+      }
+      :root[data-theme='dark'] {
+        color-scheme: dark;
+        --surface: #1c1c1c;
+        --foreground: #f5f5f5;
+        --secondary: #b7b7b7;
+        --soft: #282828;
+        --line: #3a3a3a;
+        --accent: #f5f5f5;
+        --accent-foreground: #171717;
+      }
       * {
         box-sizing: border-box;
       }
+      html {
+        scroll-behavior: smooth;
+      }
       body {
         margin: 0;
-        background: #fff;
-        color: #202634;
+        background: var(--surface);
+        color: var(--foreground);
         font:
-          14px -apple-system,
+          16px/1.7 -apple-system,
           BlinkMacSystemFont,
           'PingFang SC',
           sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      button,
+      input {
+        font: inherit;
+      }
+      button,
+      a {
+        -webkit-tap-highlight-color: transparent;
+      }
+      button {
+        cursor: pointer;
+      }
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+      :is(a, button, input, summary):focus-visible {
+        outline: 2px solid var(--foreground);
+        outline-offset: 4px;
+      }
+      .shell {
+        width: min(920px, calc(100% - 64px));
+        margin-inline: auto;
       }
       header {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 24px 30px;
-        border-bottom: 1px solid #edf0f5;
+        gap: 20px;
+        padding-block: 24px;
       }
-      header strong {
-        font-size: 13px;
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 17px;
         font-weight: 600;
-        letter-spacing: 0.3px;
+        letter-spacing: -0.4px;
       }
-      header span {
-        font-size: 10px;
-        color: #8e98aa;
+      .brand img {
+        width: 30px;
+        height: 30px;
+        border-radius: 9px;
       }
-      main {
-        max-width: 650px;
-        margin: 0 auto;
-        padding: 44px 38px;
+      nav {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        font-size: 13px;
       }
-      small {
-        font-size: 10px;
-        color: #7281a0;
-        letter-spacing: 1.3px;
+      #theme {
+        border: 0;
+        border-radius: 24px;
+        background: var(--soft);
+        color: var(--foreground);
+        padding: 7px 15px;
+      }
+      .hero {
+        padding-block: 54px 48px;
+      }
+      .eyebrow {
+        color: var(--secondary);
+        font-size: 11px;
+        font-weight: 500;
+        letter-spacing: 2px;
+        text-transform: uppercase;
       }
       h1 {
-        font-size: 29px;
-        font-weight: 500;
-        letter-spacing: -0.6px;
-        margin: 14px 0 12px;
+        max-width: 800px;
+        margin: 18px 0 24px;
+        font-size: clamp(42px, 6.6vw, 76px);
+        line-height: 1.15;
+        font-weight: 600;
+        letter-spacing: -2.8px;
+        white-space: pre-line;
+        overflow-wrap: anywhere;
       }
-      p {
+      .intro {
+        max-width: 520px;
+        margin: 0;
+        color: var(--secondary);
+        font-size: 17px;
+        line-height: 1.85;
+      }
+      .try {
+        margin-top: 34px;
+        max-width: 560px;
+      }
+      .try label {
+        display: block;
+        margin-bottom: 10px;
         font-size: 12px;
-        color: #7d8798;
-        line-height: 1.9;
-        margin: 0 0 29px;
+        color: var(--secondary);
       }
       form {
         display: flex;
+        align-items: center;
         gap: 8px;
-        margin: 0 0 27px;
+        padding: 6px;
+        background: var(--soft);
+        border-radius: 30px;
       }
-      input,
-      select,
-      button {
-        font: inherit;
-      }
-      input[type='text'] {
+      input {
         flex: 1;
         min-width: 0;
-        border: 1px solid #dce2ec;
-        border-radius: 7px;
-        padding: 11px 12px;
-        font-size: 12px;
-        outline: none;
-      }
-      input:focus {
-        border-color: #6989ee;
-        box-shadow: 0 0 0 2px #4a6ce815;
-      }
-      button {
-        cursor: pointer;
+        width: 100%;
         border: 0;
-        border-radius: 7px;
-        background: #4563de;
-        color: white;
-        padding: 10px 16px;
-        font-size: 12px;
+        border-radius: 24px;
+        padding: 9px 13px;
+        background: transparent;
+        color: var(--foreground);
+        font-size: 14px;
       }
-      button:hover {
-        background: #3553ce;
+      input::placeholder {
+        color: var(--secondary);
       }
-      .list-label {
-        display: flex;
-        justify-content: space-between;
-        color: #7c879b;
-        font-size: 10px;
-        padding-bottom: 11px;
-        border-bottom: 1px solid #e9edf5;
-      }
-      ul {
-        list-style: none;
-        padding: 0;
-        margin: 0;
-      }
-      li {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        min-height: 57px;
-        border-bottom: 1px solid #f0f3f8;
-        font-size: 12px;
-      }
-      input[type='checkbox'] {
-        accent-color: #4563de;
-        width: 15px;
-        height: 15px;
-        cursor: pointer;
-      }
-      li label {
-        flex: 1;
-        cursor: pointer;
-        line-height: 1.7;
-      }
-      li.done label {
-        text-decoration: line-through;
-        color: #9aa4b5;
-      }
-      .category {
-        font-size: 9px;
-        color: #8b97ad;
-        background: #f0f4fc;
-        padding: 4px 7px;
-        border-radius: 4px;
-      }
-      footer {
-        margin-top: 30px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        font-size: 10px;
-        color: #8b97ad;
-      }
-      select {
-        border: 1px solid #e4e9f2;
-        border-radius: 5px;
-        background: #fff;
-        color: #6c7e9c;
-        padding: 6px 7px;
-        font-size: 10px;
-        outline: none;
+      form button {
+        flex: none;
+        border: 0;
+        border-radius: 24px;
+        padding: 10px 18px;
+        background: var(--accent);
+        color: var(--accent-foreground);
+        font-size: 13px;
+        font-weight: 500;
       }
       #status {
-        font-size: 11px;
-        color: #6b83ba;
-        min-height: 20px;
-        margin-top: 15px;
+        min-height: 24px;
+        margin: 8px 0 0;
+        color: var(--secondary);
+        font-size: 12px;
       }
-      .empty {
-        padding: 25px 0;
-        color: #8492aa;
-        text-align: center;
+      .chapter {
+        padding-block: 44px 56px;
+        border-top: 1px solid var(--line);
       }
-      label[for='task'] {
-        display: block;
-        font-size: 11px;
-        color: #6d7e9b;
-        margin-bottom: 9px;
+      h2 {
+        margin: 12px 0 24px;
+        font-size: clamp(26px, 4vw, 40px);
+        font-weight: 600;
+        line-height: 1.3;
+        letter-spacing: -1px;
+      }
+      .choices {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+      .choices button {
+        min-height: 42px;
+        border: 0;
+        border-radius: 24px;
+        padding: 9px 18px;
+        background: var(--soft);
+        color: var(--secondary);
+        font-size: 14px;
+      }
+      .choices button[aria-pressed='true'] {
+        background: var(--accent);
+        color: var(--accent-foreground);
+      }
+      .example {
+        margin-top: 26px;
+        min-height: 150px;
+        padding: 26px 28px;
+        border-radius: 24px;
+        background: var(--soft);
+      }
+      .example p {
+        margin: 0;
+      }
+      .example .hint {
+        margin-bottom: 10px;
+        color: var(--secondary);
+        font-size: 12px;
+      }
+      #example {
+        font-size: 21px;
+        line-height: 1.65;
+        letter-spacing: -0.4px;
+      }
+      .guide {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 40px;
+      }
+      .guide p {
+        color: var(--secondary);
+        font-size: 15px;
+      }
+      details {
+        padding-block: 18px;
+        border-bottom: 1px solid var(--line);
+      }
+      summary {
+        cursor: pointer;
+        font-size: 15px;
+        font-weight: 500;
+      }
+      details p {
+        margin: 12px 0 2px;
+      }
+      footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 20px;
+        padding-block: 24px 34px;
+        border-top: 1px solid var(--line);
+        color: var(--secondary);
+        font-size: 12px;
+      }
+      footer a {
+        padding: 8px 0;
+      }
+      @media (max-width: 640px) {
+        .shell {
+          width: calc(100% - 40px);
+        }
+        header {
+          padding-block: 18px;
+        }
+        nav {
+          gap: 12px;
+        }
+        .hero {
+          padding-top: 32px;
+        }
+        h1 {
+          letter-spacing: -1.8px;
+        }
+        .intro {
+          font-size: 15px;
+        }
+        .try {
+          margin-top: 26px;
+        }
+        .guide {
+          grid-template-columns: 1fr;
+          gap: 14px;
+        }
+        .chapter {
+          padding-block: 32px 40px;
+        }
+        .example {
+          padding: 20px;
+        }
+        #example {
+          font-size: 18px;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
       }
     </style>
   </head>
-  <body>
-    <header><strong>Fieldnotes</strong><span>交互示例</span></header>
-    <main>
-      <small>A LITTLE FOCUS</small>
-      <h1>留一点时间，<br />给重要的事。</h1>
-      <p>把想做的事记下来，一件一件完成。</p>
-      <label for="task">添加一项任务</label>
-      <form id="form">
-        <input id="task" type="text" placeholder="接下来想完成什么？" autocomplete="off" /><button
-          type="submit"
-        >
-          添加
-        </button>
-      </form>
-      <div class="list-label"><span>今日清单</span><span id="count">0 项待办</span></div>
-      <ul id="tasks"></ul>
-      <footer>
-        <span>不着急，一步一步来。</span
-        ><select aria-label="筛选任务" id="filter">
-          <option value="all">全部任务</option>
-          <option value="pending">仅待完成</option>
-          <option value="done">仅已完成</option>
-        </select>
-      </footer>
-      <div id="status" role="status" aria-live="polite"></div>
-    </main>
+  <body id="top">
+    <div class="shell">
+      <header>
+        <a class="brand" href="#top"><img src="/athena.png" alt="" />Athena</a>
+        <nav aria-label="页面导航">
+          <a href="#possibilities">一起做点什么</a
+          ><button id="theme" type="button" aria-label="切换页面外观">深色</button>
+        </nav>
+      </header>
+      <main>
+        <section class="hero" aria-labelledby="headline">
+          <span class="eyebrow">A little idea. A new beginning.</span>
+          <h1 id="headline">从想法出发。<br />一起，把它做到。</h1>
+          <p class="intro">
+            写一段代码，探索一个网页，或聊聊刚冒出来的想法。你来决定下一步，Athena 与你一起。
+          </p>
+          <div class="try">
+            <label for="title">先试试：给这一页一个新标题</label>
+            <form id="title-form">
+              <input
+                id="title"
+                type="text"
+                placeholder="你的开场，由你来写"
+                maxlength="100"
+                autocomplete="off"
+              /><button type="submit">应用标题</button>
+            </form>
+            <p id="status" role="status" aria-live="polite">这是可以直接操作的网页，试着改一改。</p>
+          </div>
+        </section>
+        <section class="chapter" id="possibilities" aria-labelledby="possibilities-title">
+          <span class="eyebrow">Your next move</span>
+          <h2 id="possibilities-title">一个想法，就是起点。</h2>
+          <div class="choices" role="group" aria-label="选择想做的事">
+            <button type="button" data-example="code" aria-pressed="true">写代码</button>
+            <button type="button" data-example="web" aria-pressed="false">一起浏览</button>
+            <button type="button" data-example="idea" aria-pressed="false">聊聊想法</button>
+          </div>
+          <div class="example">
+            <p class="hint">可以这样对 Athena 说</p>
+            <p id="example" aria-live="polite">“帮我把这个想法，做成一个可以运行的小应用。”</p>
+          </div>
+        </section>
+        <section class="chapter guide" aria-labelledby="guide-title">
+          <div>
+            <span class="eyebrow">At your pace</span>
+            <h2 id="guide-title">按你的节奏，<br />慢慢熟悉。</h2>
+            <p>从左侧开始对话，在右侧一起看网页。需要你决定的地方，Athena 会停下来等你。</p>
+          </div>
+          <div>
+            <details>
+              <summary>我可以先不选文件夹吗？</summary>
+              <p>可以。直接开始对话或浏览网页，之后再从侧栏选择项目文件夹。</p>
+            </details>
+            <details>
+              <summary>这里用的是哪个 Agent？</summary>
+              <p>
+                使用你在准备过程中选择的本机 Agent。新对话可以选择其他已支持的
+                Agent，已有对话保留原来的连接。需要 Agent 操作网页时，请新建 Codex 对话。
+              </p>
+            </details>
+            <details>
+              <summary>我可以随时接手吗？</summary>
+              <p>
+                可以直接操作右侧网页，也可以停止当前任务。Athena 会核对页面的最新状态，再继续工作。
+              </p>
+            </details>
+          </div>
+        </section>
+      </main>
+      <footer><span>Athena · 想法，从这里开始。</span><a href="#top">回到顶部 ↑</a></footer>
+    </div>
     <script>
-      const tasks = [
-        { id: 1, text: '整理今日会议纪要', done: false },
-        { id: 2, text: '确认产品交互细节', done: false },
-        { id: 3, text: '给自己安排一段散步时间', done: true },
-      ];
-      let seq = 4;
-      function render() {
-        const list = document.getElementById('tasks');
-        list.replaceChildren();
-        const filter = document.getElementById('filter').value;
-        tasks
-          .filter((t) => filter === 'all' || (filter === 'done' ? t.done : !t.done))
-          .forEach((t) => {
-            const li = document.createElement('li');
-            li.className = t.done ? 'done' : '';
-            const input = document.createElement('input');
-            input.type = 'checkbox';
-            input.checked = t.done;
-            input.id = 'task-' + t.id;
-            input.addEventListener('change', () => {
-              t.done = input.checked;
-              document.getElementById('status').textContent = t.done
-                ? '已完成：' + t.text
-                : '已恢复：' + t.text;
-              render();
-            });
-            const label = document.createElement('label');
-            label.htmlFor = input.id;
-            label.textContent = t.text;
-            li.append(input, label);
-            list.append(li);
-          });
-        document.getElementById('count').textContent =
-          tasks.filter((t) => !t.done).length + ' 项待办';
-        if (!list.children.length) {
-          const empty = document.createElement('li');
-          empty.className = 'empty';
-          empty.textContent = '这里暂时没有任务';
-          list.append(empty);
-        }
-      }
-      document.getElementById('form').addEventListener('submit', (e) => {
-        e.preventDefault();
-        const input = document.getElementById('task');
-        const text = input.value.trim();
-        if (!text) {
-          document.getElementById('status').textContent = '请先输入任务内容';
+      const root = document.documentElement;
+      const theme = document.getElementById('theme');
+      const applyTheme = (dark) => {
+        root.dataset.theme = dark ? 'dark' : 'light';
+        theme.textContent = dark ? '浅色' : '深色';
+        theme.setAttribute('aria-pressed', String(dark));
+      };
+      applyTheme(matchMedia('(prefers-color-scheme: dark)').matches);
+      theme.addEventListener('click', () => applyTheme(root.dataset.theme !== 'dark'));
+      document.getElementById('title-form').addEventListener('submit', (event) => {
+        event.preventDefault();
+        const input = document.getElementById('title');
+        const value = input.value.trim();
+        if (!value) {
+          document.getElementById('status').textContent = '先写下你想用的标题。';
           input.focus();
           return;
         }
-        tasks.push({ id: seq++, text, done: false });
-        input.value = '';
-        render();
-        document.getElementById('status').textContent = '已添加：' + text;
+        document.getElementById('headline').textContent = value;
+        document.getElementById('status').textContent = '标题已更新：' + value;
       });
-      document.getElementById('filter').addEventListener('change', render);
-      render();
+      const examples = {
+        code: '“帮我把这个想法，做成一个可以运行的小应用。”',
+        web: '先新建一个 Codex 对话，再说：“看看当前网页，一起把它调整成我喜欢的样子。”',
+        idea: '“我有一个还没想清楚的想法，陪我一起梳理一下。”',
+      };
+      for (const button of document.querySelectorAll('[data-example]')) {
+        button.addEventListener('click', () => {
+          for (const item of document.querySelectorAll('[data-example]'))
+            item.setAttribute('aria-pressed', String(item === button));
+          document.getElementById('example').textContent = examples[button.dataset.example];
+        });
+      }
     </script>
   </body>
 </html>

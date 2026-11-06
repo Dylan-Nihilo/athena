@@ -7,7 +7,12 @@ import { StreamCliSession, type StreamCliId } from '../src/main/stream-cli-sessi
 import type { AgentEvent } from '../src/shared/types';
 
 const cliIds: StreamCliId[] = ['claude', 'gemini', 'cursor'];
-async function fixture(cli: StreamCliId, mode = 'normal', sessionId?: string) {
+async function fixture(
+  cli: StreamCliId,
+  mode = 'normal',
+  sessionId?: string,
+  approveWorkspace = true,
+) {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'athena-stream-cli-test-'));
   const script = path.join(directory, 'fixture.cjs');
   const executablePath = path.join(directory, cli === 'cursor' ? 'cursor-agent' : cli);
@@ -26,6 +31,8 @@ process.stdin.setEncoding('utf8'); process.stdin.on('data',s=>input+=s); process
  const delta=s=>cli==='claude'?out({type:'stream_event',event:{type:'content_block_delta',delta:{type:'text_delta',text:s}}}):cli==='gemini'?out({type:'message',role:'assistant',content:s,delta:true}):out({type:'assistant',timestamp_ms:123,message:message(s)});
  const result=()=>cli==='gemini'?out({type:'result',status:'success',stats:mode==='unknown-usage'?{}:{input_tokens:20,output_tokens:4,cached:3,total_tokens:28,models:{'actual-gemini':{total_tokens:28}}}}):out({type:'result',subtype:'success',is_error:false,result:'你\\u2028好!',session_id:id,...(cli==='claude'&&mode!=='unknown-usage'?{usage:{input_tokens:10,cache_read_input_tokens:3,cache_creation_input_tokens:2,output_tokens:4}}:{})});
  process.stderr.write('sk-secret-do-not-forward HIDDEN_STDERR');
+ if(mode==='quota'){process.stderr.write('Weekly usage limit reached. sk-secret-private');process.exitCode=1;return;}
+ if(mode==='auth-required'){process.stderr.write('Authentication required. sk-secret-private');process.exitCode=1;return;}
  if(mode==='missing-session'){process.exitCode=1;return;}
  if(mode==='invalid-json'){process.stdout.write('not json\\n');return;}
  if(mode==='no-init'){result();return;}
@@ -95,7 +102,15 @@ process.stdin.setEncoding('utf8'); process.stdin.on('data',s=>input+=s); process
       hostCalls++;
       throw new Error('Host tools must not be invoked');
     },
-    onEvent: (event) => events.push(event),
+    onEvent: (event) => {
+      events.push(event);
+      if (
+        approveWorkspace &&
+        event.type === 'approval' &&
+        event.request.id.startsWith('cursor-workspace:')
+      )
+        session.resolveApproval(event.request.id, true);
+    },
   });
   const logs = async () =>
     (await readFile(path.join(directory, 'args.jsonl'), 'utf8'))
@@ -135,6 +150,68 @@ function alive(pid: number) {
   } catch {
     return false;
   }
+}
+
+for (const [mode, expected] of [
+  ['quota', /额度/],
+  ['auth-required', /登录/],
+] as const) {
+  test(`CLI ${mode} errors expose an actionable category without raw diagnostics`, async () => {
+    const f = await fixture('cursor', mode);
+    try {
+      await assert.rejects(f.session.send('first'), expected);
+      assert.equal(JSON.stringify(f.events).includes('sk-secret'), false);
+    } finally {
+      await f.cleanup();
+    }
+  });
+}
+
+test('Cursor asks the host before trusting a workspace and keeps Ask restrictions after approval', async () => {
+  const f = await fixture('cursor', 'normal', undefined, false);
+  try {
+    const done = f.session.send('first');
+    await until(() => f.events.some((event) => event.type === 'approval'));
+    await assert.rejects(readFile(path.join(f.directory, 'args.jsonl')));
+    const approval = f.events.find((event) => event.type === 'approval');
+    assert.ok(approval?.type === 'approval');
+    assert.ok(approval.request.detail.includes(f.directory));
+    f.session.resolveApproval(approval.request.id, true);
+    await done;
+    const call = JSON.parse((await readFile(path.join(f.directory, 'args.jsonl'), 'utf8')).trim());
+    assert.ok(call.args.includes('--trust'));
+    assert.equal(call.args[call.args.indexOf('--mode') + 1], 'ask');
+    assert.equal(
+      call.args.some((arg: string) => ['--force', '--yolo', '--approve-mcps'].includes(arg)),
+      false,
+    );
+    assert.ok(
+      f.events.some(
+        (event) => event.type === 'request-resolved' && event.id === approval.request.id,
+      ),
+    );
+  } finally {
+    await f.cleanup();
+  }
+});
+
+for (const decision of ['deny', 'stop'] as const) {
+  test(`Cursor workspace ${decision} never starts a CLI process or accepts late approval`, async () => {
+    const f = await fixture('cursor', 'normal', undefined, false);
+    try {
+      const done = assert.rejects(f.session.send('first'), decision === 'deny' ? /拒绝/ : /停止/);
+      await until(() => f.events.some((event) => event.type === 'approval'));
+      const approval = f.events.find((event) => event.type === 'approval');
+      assert.ok(approval?.type === 'approval');
+      if (decision === 'deny') f.session.resolveApproval(approval.request.id, false);
+      else await f.session.interrupt();
+      await done;
+      await assert.rejects(readFile(path.join(f.directory, 'args.jsonl')));
+      assert.throws(() => f.session.resolveApproval(approval.request.id, true), /失效/);
+    } finally {
+      await f.cleanup();
+    }
+  });
 }
 
 for (const cli of cliIds) {
@@ -212,7 +289,10 @@ for (const cli of cliIds) {
         callTool: async () => {
           throw new Error('unavailable');
         },
-        onEvent: () => {},
+        onEvent: (event) => {
+          if (event.type === 'approval' && event.request.id.startsWith('cursor-workspace:'))
+            resumed.resolveApproval(event.request.id, true);
+        },
       });
       try {
         await resumed.send('after restart');

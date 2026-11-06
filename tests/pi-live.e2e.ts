@@ -1,6 +1,6 @@
 // Real model calls, explicitly opt-in. Only a temporary workspace may be modified.
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
@@ -12,7 +12,7 @@ if (process.env.WORKBENCH_LIVE_PI !== '1')
 const executablePath = process.env.WORKBENCH_PI_PATH;
 if (!executablePath || !path.isAbsolute(executablePath))
   throw new Error('Set WORKBENCH_PI_PATH to the installed Pi executable.');
-const workspace = await mkdtemp(path.join(os.tmpdir(), 'athena-pi-live-'));
+const workspace = await realpath(await mkdtemp(path.join(os.tmpdir(), 'athena-pi-live-')));
 const sessionDirectory = path.join(workspace, 'sessions');
 const marker = `athena-${randomUUID()}`;
 const events: AgentEvent[] = [];
@@ -42,6 +42,7 @@ const make = (sessionId?: string) =>
         } catch {
           /* Unreviewable arguments must never be approved. */
         }
+        console.log(JSON.stringify({ stage: 'approval', tool: event.request.title, allowed }));
         session.resolveApproval(event.request.id, allowed);
       }
       if (event.type === 'delta' && stopOnDelta) {
@@ -60,6 +61,20 @@ try {
   assert.ok(models.length > 0, 'Pi returned no configured models');
   await session.send(
     `Use the write tool to create evidence.txt in the current directory containing exactly ${marker}. Then use the read tool to verify that file. Reply with the exact content. Do not use bash or access any other files.`,
+  );
+  console.log(
+    JSON.stringify({
+      stage: 'tool-result',
+      toolCalls: events
+        .filter((event) => event.type === 'tool')
+        .map((event) => ({ name: event.call.name, status: event.call.status })),
+      approvals: events.filter((event) => event.type === 'approval').length,
+      reply: events
+        .filter((event) => event.type === 'delta')
+        .map((event) => event.text)
+        .join('')
+        .slice(-600),
+    }),
   );
   assert.equal((await readFile(path.join(workspace, 'evidence.txt'), 'utf8')).trim(), marker);
   assert.ok(events.some((e) => e.type === 'delta' && e.text.length));

@@ -33,6 +33,12 @@ const make = (sessionId?: string) =>
     callTool: async () => ({ isError: true, text: 'Browser tools unavailable' }),
     onEvent(event) {
       events.push(event);
+      if (event.type === 'approval' && event.request.id.startsWith('cursor-workspace:')) {
+        session.resolveApproval(
+          event.request.id,
+          event.request.detail.startsWith(`${workspace}\n`),
+        );
+      }
       if (event.type === 'delta' && stopOnDelta) {
         stopOnDelta = false;
         void session.interrupt();

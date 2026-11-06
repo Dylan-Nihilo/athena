@@ -1,11 +1,11 @@
 # Claude Code / Gemini CLI / Cursor Agent 协议依据
 
-本文记录隔离适配阶段的协议依据。后续宿主集成与真实调用状态见 [本机 CLI 适配](mainstream-cli-support.md)：Claude 已通过真实模型验证，Cursor 需登录，Gemini 尚未安装；不能把下文的模拟结果当作三者全部实测通过。
+本文记录隔离适配阶段的协议依据。后续宿主集成与真实调用状态见 [本机 CLI 适配](mainstream-cli-support.md)：Codex/Claude 已通过真实 Electron 对话验证，Cursor 的模型调用受账户额度限制，Gemini 已安装但真实验收暂缓；不能把下文的协议或模拟结果当作全部实测通过。
 
 ## 范围与验证层级
 
 实现：`src/main/stream-cli-session.ts`，统一导出 `StreamCliSession`，构造参数为 `AgentSessionOptions & { cli: 'claude' | 'gemini' | 'cursor' }`。
-模拟测试：`tests/stream-cli-session.test.ts`。本工作**未执行真实模型请求**，未安装 CLI、未修改用户配置、未变更 supported 标记或主程序集成。
+模拟测试：`tests/stream-cli-session.test.ts`。下文最初记录隔离适配阶段；后续真实测试、安装及宿主集成状态以上述验收矩阵为准。
 
 本机只执行无模型费用的 `--help` / `--version`：
 
@@ -52,10 +52,10 @@ Cursor 文档只提供 init 的模型显示名称，没有当前 assistant 的�
 - 父任务负责 main/UI/store/discovery/onboarding；本文件不改这些入口。按对话固定 CLI，只有同 CLI 的原生 session ID 可以恢复；不能从 Codex/Pi/其他 CLI ID 或拼接历史创建“恢复”。
 - `prepare()` 只校验配置，不启动模型；`isReady` 不代表已登录或恢复成功。`listModels()` 返回空目录，而不是用模型调用发现目录或捏造可选项。已知外部模型标识可通过 `selection.model` 传入，CLI 最终决定是否支持；effort 仅接受本机 Claude help 中明确的值。
 - 首次 `send()` 等待原生 init 才发 run-started；恢复 ID 不同立即失败，缺失 session 不重试建新。失败/停止后 adapter 关闭，宿主可显式新建 adapter 并使用已保存的原生 ID 再恢复，不自动重放消息。
-- 必须传 `tools: []`，隐藏/禁用浏览器与元素能力；非空 tools 和 selectedElement 明确报错。`callTool` 不调用；审批/提问 resolver 明确不支持，收到原生审批请求会停止，而非伪造成功。
+- 必须传 `tools: []`，隐藏/禁用浏览器与元素能力；非空 tools 和 selectedElement 明确报错。`callTool` 不调用。Cursor 的宿主目录信任请求需逐次批准；其余原生工具审批/提问仍不支持，收到未桥接请求会停止。目录信任不等同于任意命令或文件写入授权。
 - prompt/context 走 stdin 并 EOF，不经过 shell，不修改凭据。stderr 排空但不展示；协议错误使用固定错误文案。stdout 仅解析已知公开文本/元数据，不发 thinking 或完整协议记录。
 - 每回合都必须具备匹配的 init、成功原生 result、正常退出码，才发 complete。只见 delta、只见退出码 0、权限拒绝、错误 result、无 result、中止和非零退出都不会成功。
-- POSIX detached 进程组 TERM 后 1.5 秒 KILL；即使 leader 先退出也保留组清理。停止不以杀进程假装模型已完成。30 秒初始化超时，整回合 15 分钟上限；不无限等待原生交互。Windows 没有 POSIX 进程组能力，仅直接终止子进程，进程树停止能力**未验证**。
+- POSIX detached 进程组 TERM 后 1.5 秒 KILL；即使 leader 先退出也保留组清理。停止不以杀进程假装模型已完成。Claude/Gemini 初始化超时为 30 秒，Cursor 为 60 秒；目录确认等待及整回合各有 15 分钟上限；不无限等待原生交互。Windows 没有 POSIX 进程组能力，仅直接终止子进程，进程树停止能力**未验证**。
 
 ## 验证命令
 
