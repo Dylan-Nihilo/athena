@@ -193,7 +193,7 @@ try {
   // Let the host finish its initial local-page navigation before starting an Agent turn.
   await expect
     .poll(async () => (await snapshot()).browser.title, { timeout: 30_000 })
-    .toContain('今日清单');
+    .toContain('Athena · 从想法开始');
   await expect.poll(async () => (await snapshot()).browser.loading).toBe(false);
   checks.push('Isolated Electron userData and fake CLI detected; no saved Feishu identity');
 

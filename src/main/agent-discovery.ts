@@ -72,6 +72,21 @@ export async function discoverExecutables(names: string[], directories: string[]
     }
   return candidates;
 }
+
+export function piIsolationArguments(help: string): string[] | undefined {
+  const flags = ['--no-extensions', '--no-skills', '--no-prompt-templates'];
+  if (flags.some((flag) => !help.includes(flag))) return;
+  if (help.includes('--no-mcp')) flags.push('--no-mcp');
+  else if (
+    !/--no-extensions(?:,\s*-\w+)?\s+Disables? extension discovery and built-in extensions/i.test(
+      help,
+    )
+  )
+    return;
+  // Pi 1.x ships MCP as a built-in extension, covered by --no-extensions.
+  return [...flags, '--no-approve'];
+}
+
 export async function detectAgents(
   codexFallback?: string,
   searchDirectories?: string[],
@@ -127,9 +142,12 @@ export async function detectAgents(
                 : id === 'gemini'
                   ? ['--admin-policy', '--approval-mode']
                   : id === 'cursor'
-                    ? ['--mode', '--output-format']
-                    : ['--no-extensions', '--no-mcp'];
-            if (required.some((flag) => !help.stdout.includes(flag))) {
+                    ? ['--mode', '--output-format', '--trust']
+                    : [];
+            if (
+              required.some((flag) => !help.stdout.includes(flag)) ||
+              (id === 'pi' && !piIsolationArguments(help.stdout))
+            ) {
               found = {
                 id,
                 name,

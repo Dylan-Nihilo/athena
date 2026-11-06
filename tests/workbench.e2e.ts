@@ -114,7 +114,7 @@ try {
     );
   await expect
     .poll(async () => (await snapshot()).browser.title, { timeout: 30_000 })
-    .toContain('今日清单');
+    .toContain('Athena · 从想法开始');
   await expect
     .poll(async () => (await snapshot()).codexConnection?.status, { timeout: 30_000 })
     .toBe('ready');

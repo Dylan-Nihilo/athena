@@ -9,7 +9,11 @@ import {
   conversationModelSelection,
   supportsBrowser,
 } from '../src/shared/agents';
-import { discoverExecutables, detectAgents } from '../src/main/agent-discovery';
+import {
+  discoverExecutables,
+  detectAgents,
+  piIsolationArguments,
+} from '../src/main/agent-discovery';
 import { OnboardingRuntime } from '../src/main/onboarding';
 import type { AgentInfo, Conversation, Settings } from '../src/shared/types';
 
@@ -54,7 +58,7 @@ test('discovery deduplicates real installations and finds a healthy CLI after a 
     );
     await executable(
       path.join(first, 'cursor-agent'),
-      'if [ "$1" = "--version" ]; then echo "Cursor fixture"; else echo "Start the Cursor Agent --mode --output-format"; fi',
+      'if [ "$1" = "--version" ]; then echo "Cursor fixture"; else echo "Start the Cursor Agent --mode --output-format --trust"; fi',
     );
     await symlink(path.join(first, 'cursor-agent'), path.join(first, 'agent'));
     assert.equal((await discoverExecutables(['cursor-agent', 'agent'], [first])).length, 1);
@@ -93,6 +97,35 @@ test('old native CLI without required safe-mode flags remains unselectable', asy
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test('Pi 1.x built-in extension isolation is accepted without the removed no-mcp flag', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'athena-pi-current-'));
+  try {
+    await executable(
+      path.join(root, 'pi'),
+      'if [ "$1" = "--version" ]; then echo "1.0.2"; else echo "--mode <mode> text, json, rpc"; echo "--no-extensions Disable extension discovery and built-in extensions"; echo "--no-skills --no-prompt-templates"; fi',
+    );
+    const pi = (await detectAgents(undefined, [root])).find((agent) => agent.id === 'pi');
+    assert.equal(pi?.available, true);
+    assert.equal(pi?.supported, true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('Pi startup requires a documented way to disable MCP in both supported layouts', () => {
+  const common = '--no-skills --no-prompt-templates';
+  assert.ok(piIsolationArguments(`--no-extensions --no-mcp ${common}`)?.includes('--no-mcp'));
+  assert.equal(piIsolationArguments(`--no-extensions ${common}`), undefined);
+  assert.equal(
+    piIsolationArguments(`--no-extensions Does not disable built-in extensions ${common}`),
+    undefined,
+  );
+  assert.equal(
+    piIsolationArguments('--no-extensions Disable extension discovery and built-in extensions'),
+    undefined,
+  );
 });
 
 test('Pi setup is not blocked by absent Codex; changing the default does not fake its login', async () => {

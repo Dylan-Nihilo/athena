@@ -56,7 +56,7 @@ try {
         ),
       { timeout: 15_000 },
     )
-    .toContain('今日清单');
+    .toContain('Athena · 从想法开始');
   if (process.env.WORKBENCH_HIDE_TEST_WINDOW === '1') {
     await application.evaluate(({ BrowserWindow }) => {
       const window = BrowserWindow.getAllWindows()[0];
@@ -172,7 +172,7 @@ try {
   await expect(page.getByRole('textbox', { name: '网页键盘输入' })).toBeFocused();
   await page.keyboard.type('Workbench interface check');
   state = await snapshot();
-  const add = state.elements.find((item: any) => item.tag === 'button' && item.name === '添加');
+  const add = state.elements.find((item: any) => item.tag === 'button' && item.name === '应用标题');
   await clickElement(add);
   await expect
     .poll(async () => (await snapshot()).text, { timeout: 10_000 })
@@ -200,16 +200,16 @@ try {
   await page.getByRole('button', { name: '选取元素', exact: true }).click();
   state = await snapshot();
   await clickElement(
-    state.elements.find((item: any) => item.tag === 'button' && item.name === '添加'),
+    state.elements.find((item: any) => item.tag === 'button' && item.name === '应用标题'),
   );
-  await expect(page.locator('.selected-context')).toContainText('添加');
+  await expect(page.locator('.selected-context')).toContainText('应用标题');
   await page.getByRole('button', { name: '移除选中元素' }).click();
   checks.push('Element picking attaches context without submitting form');
 
   if (process.env.WORKBENCH_LIVE_AGENT_TEST === '1') {
     const textarea = page.getByRole('textbox', { name: '发送给 Agent 的任务' });
     await textarea.fill(
-      '请使用当前浏览器页面，把“Electron 联调通过”添加到今日清单。添加后确认页面里存在这项任务，用一句中文告诉我结果。不要使用终端或文件工具。',
+      '请使用当前浏览器页面，把这页的标题改为“Electron 联调通过”。应用后确认页面标题已经改变，用一句中文告诉我结果。不要使用终端或文件工具。',
     );
     await page.getByRole('button', { name: '发送任务' }).click();
     await expect

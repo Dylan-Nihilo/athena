@@ -55,6 +55,7 @@ export interface OnboardingState {
   };
   workspace: {
     path: string;
+    mode?: 'project' | 'personal';
     status: 'unchecked' | 'checking' | 'ready' | 'error';
     candidate?: { id: string; path: string };
     error?: string;
@@ -81,6 +82,7 @@ export interface OnboardingCommandPayloads {
   'onboarding:login/reopen': undefined;
   'onboarding:cancel': { operationId: string };
   'onboarding:workspace/pick': undefined;
+  'onboarding:workspace/skip': undefined;
   'onboarding:workspace/confirm': { candidateId: string };
   'onboarding:browser/prepare': undefined;
   'onboarding:defer': undefined;

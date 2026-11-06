@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/bitcat-ai/athena/releases/download/v0.8.0/Athena-0.8.0-mac-arm64.dmg"><strong>下载 macOS 版</strong></a>
+  <a href="https://github.com/bitcat-ai/athena/releases/download/v0.9.0/Athena-0.9.0-mac-arm64.dmg"><strong>下载 macOS 版</strong></a>
   &nbsp;·&nbsp;
   <a href="docs/user-guide.md">使用指南</a>
   &nbsp;·&nbsp;
@@ -21,7 +21,7 @@
 </p>
 
 <p align="center">
-  <sub>macOS · Apple Silicon · v0.8.0</sub>
+  <sub>macOS · Apple Silicon · v0.9.0</sub>
 </p>
 
 <p align="center">
@@ -47,7 +47,7 @@
 ## 三步开始
 
 1. **打开 Athena。** 下载 DMG，将应用拖入 Applications。
-2. **完成首次准备。** 引导会检测 Codex 与已有登录，按需展示安装计划，再由你选择和确认工作目录。网页工具可以稍后准备。
+2. **完成首次准备。** 引导会检测本机 Agent 并让你选择已有连接，按需展示安装计划。项目文件夹可跳过，网页工具可稍后准备。
 3. **开始第一个任务。** 输入想完成的事，或展开浏览器，打开需要处理的页面。
 
 <details>
@@ -55,17 +55,17 @@
 
 选择和实际结果会保留在连续对话中。你可以回看，也可以稍后设置；已有用户直接进入工作台，并能从设置重新打开引导。
 
-![Athena 首次引导实机画面](docs/screenshots/onboarding.png)
+![Athena 首次引导（隔离 UI 测试）](docs/screenshots/onboarding.png)
 
 </details>
 
-**公开下载版本：[0.8.0](https://github.com/bitcat-ai/athena/releases/tag/v0.8.0)** · [ZIP 归档](https://github.com/bitcat-ai/athena/releases/download/v0.8.0/Athena-0.8.0-mac-arm64.zip) · [SHA-256 校验](https://github.com/bitcat-ai/athena/releases/download/v0.8.0/SHA256SUMS.txt) · [全部版本](https://github.com/bitcat-ai/athena/releases)
+**公开下载版本：[0.9.0](https://github.com/bitcat-ai/athena/releases/tag/v0.9.0)** · [ZIP 归档](https://github.com/bitcat-ai/athena/releases/download/v0.9.0/Athena-0.9.0-mac-arm64.zip) · [SHA-256 校验](https://github.com/bitcat-ai/athena/releases/download/v0.9.0/SHA256SUMS.txt) · [全部版本](https://github.com/bitcat-ai/athena/releases)
 
-> 0.8.0 的 macOS Apple Silicon 安装包已完成 Developer ID 正式签名和 Apple 公证，尚无自动更新。安装包不包含用户登录或 BrowserOS neo；引导会按需准备运行组件。
+> 0.9.0 的 macOS Apple Silicon 安装包已完成 Developer ID 正式签名和 Apple 公证，尚无自动更新。安装包不包含用户登录或 BrowserOS neo；引导会按需准备运行组件。
 
 ## 使用之前
 
-- **任务执行由 Codex 提供。** 模型请求使用对应 CLI 账户的配额或计费；其他 CLI 的安装检测不代表已接入执行。
+- **按 CLI 的实际能力执行任务。** 模型请求使用对应账户的配额或计费；Agent 网页操作仅支持 Codex。Pi UI 续聊仍待排查，Cursor/Gemini 本轮真实模型验收未完成，详见 [CLI 验收矩阵](docs/mainstream-cli-support.md)。
 - **网页功能需要 BrowserOS neo。** 使用独立的浏览器数据，不导入日常浏览器配置；普通 Chrome 不能替代它。
 - **费用展示为 API 等价估算。** 它不代表订阅实际扣费；未知或不完整的用量会保留其状态。
 - **已有数据继续保留。** 沿用原数据目录、钥匙串和工具协议。详见 [数据与凭据](docs/user-guide.md#数据与凭据)。

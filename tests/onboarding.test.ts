@@ -83,9 +83,10 @@ async function fixture(
       data.agents = agents;
     },
     pickWorkspace: async () => data.candidate,
-    commitWorkspace: async (value) => {
+    commitWorkspace: async (value, mode) => {
       data.commits.push(value);
       settings.workspace = value;
+      settings.workspaceMode = mode;
     },
     saveProgress: async (value) => {
       data.progress = value;
@@ -233,6 +234,62 @@ test('candidate IDs and access checks precede committing a selected directory', 
     assert.equal(f.runtime.getState().workspace.status, 'ready');
     assert.equal(f.runtime.blocksTasks, false);
     assert.equal(f.data.progress?.workspaceConfirmed, chosen);
+  } finally {
+    await f.close();
+  }
+});
+
+test('project-free setup uses a private workspace, persists the choice and can later select a project', async () => {
+  const f = await fixture();
+  try {
+    const previous = f.settings.workspace;
+    const marker = path.join(previous, 'keep.txt');
+    await writeFile(marker, 'existing work');
+    f.runtime.skipWorkspace();
+    await f.runtime.settled();
+    const state = f.runtime.getState();
+    assert.equal(state.workspace.path, path.join(f.directory, 'workspace'));
+    assert.equal(state.workspace.mode, 'personal');
+    assert.equal(state.workspace.status, 'ready');
+    assert.equal(f.settings.workspaceMode, 'personal');
+    assert.equal(f.runtime.blocksTasks, false);
+    assert.equal(await readFile(marker, 'utf8'), 'existing work');
+    await f.runtime.complete();
+    await f.runtime.settled();
+    assert.equal(f.runtime.getState().status, 'complete');
+    const store = new Store(f.directory);
+    store.data.settings = { ...f.settings };
+    store.data.onboarding = f.data.progress;
+    await store.save();
+    const restored = new Store(f.directory);
+    await restored.load();
+    assert.equal(restored.data.settings.workspaceMode, 'personal');
+    assert.equal(restored.data.onboarding?.workspaceConfirmed, state.workspace.path);
+    await f.runtime.open();
+    const project = await confirmProject(f);
+    assert.equal(f.settings.workspace, project);
+    assert.equal(f.settings.workspaceMode, 'project');
+    assert.equal(f.runtime.getState().workspace.mode, 'project');
+  } finally {
+    await f.close();
+  }
+});
+
+test('skipping a project never bypasses agent readiness or an active task', async () => {
+  const f = await fixture({ initialAgents: missing() });
+  try {
+    f.data.busy = true;
+    assert.throws(() => f.runtime.skipWorkspace(), /结束当前任务/);
+    assert.equal(await present(path.join(f.directory, 'workspace')), false);
+    f.data.busy = false;
+    f.runtime.skipWorkspace();
+    await f.runtime.settled();
+    assert.equal(f.runtime.getState().workspace.mode, 'personal');
+    assert.equal(f.runtime.blocksTasks, true);
+    await f.runtime.complete();
+    await f.runtime.settled();
+    assert.notEqual(f.runtime.getState().status, 'complete');
+    assert.equal(f.runtime.getState().coreReady, false);
   } finally {
     await f.close();
   }

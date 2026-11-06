@@ -55,7 +55,7 @@ interface Options {
   probeAgents(): Promise<AgentInfo[]>;
   onAgents(agents: AgentInfo[]): void;
   pickWorkspace(): Promise<string | undefined>;
-  commitWorkspace(directory: string): Promise<void>;
+  commitWorkspace(directory: string, mode?: Settings['workspaceMode']): Promise<void>;
   saveProgress(progress: OnboardingProgress | undefined): Promise<void>;
   discoverBrowser(): Promise<string | undefined>;
   browserReady(): boolean;
@@ -151,7 +151,11 @@ export class OnboardingRuntime {
         : (this.progress?.required ?? this.progress?.status !== 'complete'),
       coreReady: false,
       codex: { status: 'unchecked', authentication: 'unknown' },
-      workspace: { path: options.settings().workspace, status: 'unchecked' },
+      workspace: {
+        path: options.settings().workspace,
+        mode: options.settings().workspaceMode,
+        status: 'unchecked',
+      },
       browser: { status: this.progress?.browserDeferred ? 'deferred' : 'unchecked' },
     };
     this.acceptAgents(options.initialAgents);
@@ -309,6 +313,7 @@ export class OnboardingRuntime {
   private async readWorkspace() {
     const current = this.options.settings().workspace;
     this.state.workspace.path = current;
+    this.state.workspace.mode = this.options.settings().workspaceMode;
     try {
       await checkWorkspace(current);
       this.state.workspace.status = 'ready';
@@ -862,15 +867,46 @@ export class OnboardingRuntime {
         this.assertIdle();
         if (this.state.operation) this.state.operation.cancelable = false;
         this.publish();
-        await this.options.commitWorkspace(candidate.path);
+        await this.options.commitWorkspace(candidate.path, 'project');
         this.changedConfiguration = true;
-        this.state.workspace = { path: candidate.path, status: 'ready' };
+        this.state.workspace = { path: candidate.path, mode: 'project', status: 'ready' };
         this.progress = {
           ...this.progress,
           version: 1,
           status: 'in-progress',
           stage: this.state.stage,
           workspaceConfirmed: candidate.path,
+        };
+        context.check();
+        this.state.stage = this.nextStage();
+        await this.persist();
+        context.check();
+      },
+    );
+  }
+  skipWorkspace() {
+    return this.begin(
+      'workspace:skip',
+      'workspace-check',
+      'preparing-personal-workspace',
+      '正在准备对话空间…',
+      async (context) => {
+        const directory = path.join(this.options.directory, 'workspace');
+        await mkdir(directory, { recursive: true, mode: 0o700 });
+        await checkWorkspace(directory);
+        context.check();
+        this.assertIdle();
+        if (this.state.operation) this.state.operation.cancelable = false;
+        this.publish();
+        await this.options.commitWorkspace(directory, 'personal');
+        this.changedConfiguration = true;
+        this.state.workspace = { path: directory, mode: 'personal', status: 'ready' };
+        this.progress = {
+          ...this.progress,
+          version: 1,
+          status: 'in-progress',
+          stage: 'workspace',
+          workspaceConfirmed: directory,
         };
         context.check();
         this.state.stage = this.nextStage();

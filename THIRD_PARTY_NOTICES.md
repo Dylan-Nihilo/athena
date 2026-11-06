@@ -17,20 +17,20 @@ BrowserOS neo 和 Electron 均包含 Chromium 及其他第三方组件，各组�
 
 ## 直接运行依赖
 
-| 组件                            | 核查版本 | 许可与来源                                                                                                              |
-| ------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Electron                        | 45.1.0   | [MIT](https://github.com/electron/electron/blob/main/LICENSE)；其内含 Chromium/Node.js 的声明另行保留                   |
-| `@larksuiteoapi/node-sdk`       | 1.76.0   | [MIT](https://github.com/larksuite/node-sdk/blob/main/LICENSE)                                                          |
-| `@a2ui/react`、`@a2ui/web_core` | 0.14.0   | [Apache-2.0](https://github.com/a2ui-project/a2ui/blob/main/LICENSE)；采用 v0.9.1 协议，Athena 自定义受信任控件 catalog |
-| `zod`                           | 3.25.76  | [MIT](https://github.com/colinhacks/zod/blob/main/LICENSE)                                                              |
-| React、React DOM                | 19.3.1   | [MIT](https://github.com/react/react/blob/main/LICENSE)                                                                 |
-| `react-markdown`                | 10.1.0   | [MIT](https://github.com/remarkjs/react-markdown/blob/main/license)                                                     |
-| `remark-gfm`（Markdown 表格）   | 4.0.1    | [MIT](https://github.com/remarkjs/remark-gfm/blob/main/license)                                                         |
-| `shiki`（Pro 工具参数高亮）     | 4.6.0    | [MIT](resources/licenses/shiki-LICENSE.txt)                                                                             |
-| `@hugeicons/react`              | 1.1.10   | React 渲染器，[MIT](https://github.com/hugeicons/hugeicons/blob/main/packages/react/LICENSE.md) |
-| `@hugeicons-pro/core-stroke-rounded` | 4.4.0 | 通用操作图标，[HugeIcons Pro 商业许可](https://hugeicons.com/license-agreement) |
-| `qrcode`                        | 1.5.4    | [MIT](https://github.com/soldair/node-qrcode/blob/master/license)                                                       |
-| `ws`                            | 8.22.0   | [MIT](https://github.com/websockets/ws/blob/master/LICENSE)                                                             |
+| 组件                                 | 核查版本 | 许可与来源                                                                                                              |
+| ------------------------------------ | -------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Electron                             | 45.1.0   | [MIT](https://github.com/electron/electron/blob/main/LICENSE)；其内含 Chromium/Node.js 的声明另行保留                   |
+| `@larksuiteoapi/node-sdk`            | 1.76.0   | [MIT](https://github.com/larksuite/node-sdk/blob/main/LICENSE)                                                          |
+| `@a2ui/react`、`@a2ui/web_core`      | 0.14.0   | [Apache-2.0](https://github.com/a2ui-project/a2ui/blob/main/LICENSE)；采用 v0.9.1 协议，Athena 自定义受信任控件 catalog |
+| `zod`                                | 3.25.76  | [MIT](https://github.com/colinhacks/zod/blob/main/LICENSE)                                                              |
+| React、React DOM                     | 19.3.1   | [MIT](https://github.com/react/react/blob/main/LICENSE)                                                                 |
+| `react-markdown`                     | 10.1.0   | [MIT](https://github.com/remarkjs/react-markdown/blob/main/license)                                                     |
+| `remark-gfm`（Markdown 表格）        | 4.0.1    | [MIT](https://github.com/remarkjs/remark-gfm/blob/main/license)                                                         |
+| `shiki`（Pro 工具参数高亮）          | 4.6.0    | [MIT](resources/licenses/shiki-LICENSE.txt)                                                                             |
+| `@hugeicons/react`                   | 1.1.10   | React 渲染器，[MIT](https://github.com/hugeicons/hugeicons/blob/main/packages/react/LICENSE.md)                         |
+| `@hugeicons-pro/core-stroke-rounded` | 4.4.0    | 通用操作图标，[HugeIcons Pro 商业许可](https://hugeicons.com/license-agreement)                                         |
+| `qrcode`                             | 1.5.4    | [MIT](https://github.com/soldair/node-qrcode/blob/master/license)                                                       |
+| `ws`                                 | 8.22.0   | [MIT](https://github.com/websockets/ws/blob/master/LICENSE)                                                             |
 
 按钮 SVG 的悬停动效改编自 [lucide-animated](https://github.com/pqoqubbw/icons/tree/4662fff2b60fdcf4751b32013606756caf7c4c26)，使用 Motion 和原生 Web Animations 播放。作者版权声明和 MIT 许可随应用保存在 [lucide-animated-LICENSE.txt](resources/licenses/lucide-animated-LICENSE.txt)。
 
@@ -47,6 +47,8 @@ Athena 黑白女性侧脸标识为本次 GPT Image 生成的项目素材，存�
 Codex、Claude Code、Gemini CLI、OpenCode 使用 [Lobe Icons](https://github.com/lobehub/lobe-icons) 的专属 SVG（Codex、Claude Code、Gemini CLI 使用上游原色版本，OpenCode 使用原有黑白版本），来自 `@lobehub/icons-static-svg@1.101.0`，固定发布提交 `aea0ecb0fe1439467219197c52ffaeb579dfe33f`。图标保持上游图形与配色不变，随应用内置，不在运行时请求 CDN。
 
 上游为 MIT，Copyright (c) 2023 LobeHub。完整许可随源码及应用保存在 `resources/licenses/lobe-icons-LICENSE.txt`；文件来源见 `src/renderer/assets/agents/README.md`。品牌标识用于识别对应 CLI，不表示本项目与相应权利人存在关联或背书。
+
+Pi 使用 [官方 Press Kit](https://pi.dev/press-kit) 的自适应浅/深色 SVG badge；Cursor 使用 [官方品牌资源](https://cursor.com/brand) 的 2D cube 浅/深色标识。2026-11-05 获取，原始 SVG 未修改并随应用内置。上述品牌资源不沿用 Lobe Icons 的包许可；品牌权利属于各自权利人，仅用于识别对应产品，不表示关联或背书。
 
 ## 构建与测试依赖
 

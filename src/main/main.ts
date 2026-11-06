@@ -906,6 +906,8 @@ async function invoke(action: string, payload: unknown) {
         return onboarding.cancel(string(record(payload).operationId, 100));
       case 'onboarding:workspace/pick':
         return onboarding.pickWorkspace();
+      case 'onboarding:workspace/skip':
+        return onboarding.skipWorkspace();
       case 'onboarding:workspace/confirm':
         return onboarding.confirmWorkspace(string(record(payload).candidateId, 100));
       case 'onboarding:browser/prepare':
@@ -1123,6 +1125,7 @@ async function invoke(action: string, payload: unknown) {
       });
       if (selection.canceled || !selection.filePaths[0]) return null;
       store.data.settings.workspace = selection.filePaths[0];
+      store.data.settings.workspaceMode = 'project';
       resetConnections();
       await store.save();
       void prepareConversation(selectedConversation()).catch(() => {});
@@ -1270,6 +1273,7 @@ async function launch() {
   }
   app.dock?.setIcon(path.join(app.getAppPath(), 'resources/athena-icon.png'));
   const demoHtml = await readFile(path.join(app.getAppPath(), 'resources/demo.html'));
+  const welcomeLogo = await readFile(path.join(app.getAppPath(), 'resources/athena-icon.png'));
   demoServer = createServer((request, response) => {
     if (request.url === '/' && request.method === 'GET') {
       response.writeHead(200, {
@@ -1277,6 +1281,9 @@ async function launch() {
         'cache-control': 'no-store',
       });
       response.end(demoHtml);
+    } else if (request.url === '/athena.png' && request.method === 'GET') {
+      response.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'no-store' });
+      response.end(welcomeLogo);
     } else {
       response.writeHead(404);
       response.end();
@@ -1287,7 +1294,7 @@ async function launch() {
     demoServer!.listen(0, '127.0.0.1', resolve);
   });
   const address = demoServer.address();
-  if (!address || typeof address === 'string') throw new Error('示例页面无法启动');
+  if (!address || typeof address === 'string') throw new Error('Athena 欢迎页无法启动');
   demoUrl = `http://127.0.0.1:${address.port}`;
   store = new Store(app.getPath('userData'));
   await store.load();
@@ -1301,7 +1308,10 @@ async function launch() {
   );
   usage = new UsageStore(app.getPath('userData'));
   await usage.load(store.data.conversations);
-  agents = await detectAgents(managedCodexPath(app.getPath('userData')));
+  const startsWithGreeting =
+    !store.existingData ||
+    (store.data.onboarding?.required && store.data.onboarding.stage === 'welcome');
+  agents = startsWithGreeting ? [] : await detectAgents(managedCodexPath(app.getPath('userData')));
   await createBrowserRuntime(store.data.settings.browserPath);
   onboarding = new OnboardingRuntime({
     directory: app.getPath('userData'),
@@ -1322,14 +1332,17 @@ async function launch() {
       });
       return result.canceled ? undefined : result.filePaths[0];
     },
-    commitWorkspace: async (directory) => {
+    commitWorkspace: async (directory, mode = 'project') => {
       if (active || startingTurn || sharing?.active) throw new Error('请先结束当前任务或共享');
       const previous = store.data.settings.workspace;
+      const previousMode = store.data.settings.workspaceMode;
       store.data.settings.workspace = directory;
+      store.data.settings.workspaceMode = mode;
       try {
         await store.save();
       } catch (error) {
         store.data.settings.workspace = previous;
+        store.data.settings.workspaceMode = previousMode;
         throw error;
       }
       resetConnections();
@@ -1372,7 +1385,7 @@ async function launch() {
       signal.addEventListener('abort', cancel, { once: true });
       try {
         phase('starting', '正在连接 BrowserOS neo…');
-        await targetBrowser.start();
+        await targetBrowser.start(hadBrowser ? undefined : demoUrl);
         signal.throwIfAborted();
         phase('preparing-tools', '正在校验并准备网页控制组件…');
         await targetNeo.start();

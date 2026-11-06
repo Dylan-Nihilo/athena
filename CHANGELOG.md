@@ -1,5 +1,22 @@
 # 更新日志
 
+## 0.9.0 · 2026-11-06
+
+- 首次准备改为连续对话：欢迎开场、Agent 胶囊选择、选项转为用户回复和短句呈现；回看历史时保留位置。
+- 项目文件夹可选。完成真实准备后自动进入主界面，并在右侧打开可交互的 Athena 欢迎页。
+- 兼容 Pi 1.x 的扩展隔离；Cursor 目录信任逐次确认，保留 Ask 只读边界；认证和额度错误提供明确提示。
+- 补齐 Pi/Cursor 品牌标识及深色显示；纳入本机多 CLI 适配、安装包去重与贡献指南。
+- 保持已有数据、钥匙串、审批、停止与网页操作协议兼容。
+
+Codex、Claude 的真实 UI 对话链路已验证。Pi 完整 UI 续聊仍待排查，Cursor 本轮模型验收受账户额度限制，Gemini 真实验收暂缓；本版本不代表所有 CLI 验收全绿。[查看验证矩阵](docs/mainstream-cli-support.md)。
+
+macOS Apple Silicon：
+
+- [DMG 安装包](https://github.com/bitcat-ai/athena/releases/download/v0.9.0/Athena-0.9.0-mac-arm64.dmg)
+- [ZIP 归档](https://github.com/bitcat-ai/athena/releases/download/v0.9.0/Athena-0.9.0-mac-arm64.zip)
+- [SHA-256 校验文件](https://github.com/bitcat-ai/athena/releases/download/v0.9.0/SHA256SUMS.txt)
+- [Release 页面](https://github.com/bitcat-ai/athena/releases/tag/v0.9.0)
+
 ## 0.8.0 · 2026-11-04
 
 - 模型选择和推理强度可在同一面板调整。工作台会提示待审批、待回答、需要人工接管的任务，以及 Codex CLI 的可用更新。

@@ -35,7 +35,16 @@ if(mode==='deferred'){initial.status='deferred';initial.stage='codex';initial.co
 const fixture=window.__onboardingFixture={mode,state:initial,calls:[],listeners:[],ready:false,pendingSnapshots:[],nextOperation:1,cancelPick:false,exitDeferred:false};
 fixture.snapshot={localUser:{name:'Fixture User'},settings:{workspace:'/fixture/original',agent:'codex'},agents:[],codexConnection:{status:'idle'},browser:{status:'missing',engine:'browseros',tabs:[],url:'',title:'',loading:false,canGoBack:false,canGoForward:false,recording:false,inspecting:false},neo:{status:'stopped'},feishu:{status:'disconnected',paired:false},recordings:[],conversations:mode==='legacy'?[{id:'existing',title:'已有工作',workspace:'/fixture/original',updatedAt:Date.now(),messages:[]}]:[]};
 fixture.emit=event=>{for(const listener of fixture.listeners)listener(event)};
-fixture.sync=()=>{fixture.snapshot.onboarding=structuredClone(fixture.state);fixture.snapshot.agents=[{id:'codex',name:'Codex',available:fixture.state.codex.status==='ready',supported:true,authentication:fixture.state.codex.authentication,path:fixture.state.codex.path}];if(fixture.state.workspace.status==='ready')fixture.snapshot.settings.workspace=fixture.state.workspace.path;fixture.snapshot.browser.status=fixture.state.browser.status==='ready'?'ready':'missing';};
+fixture.sync=()=>{
+ const codex={id:'codex',name:'Codex',available:fixture.state.codex.status==='ready',supported:true,authentication:fixture.state.codex.authentication,path:fixture.state.codex.path};
+ const others=(fixture.state.agents||[]).filter(agent=>agent.id!=='codex'&&agent.id!==fixture.state.executor?.id);
+ if(fixture.state.executor?.id&&fixture.state.executor.id!=='codex')others.push(fixture.state.executor);
+ fixture.state.agents=[codex,...others];fixture.state.selectedAgent ||= 'codex';
+ if(fixture.state.selectedAgent==='codex')fixture.state.executor=codex;
+ fixture.snapshot.onboarding=structuredClone(fixture.state);fixture.snapshot.agents=structuredClone(fixture.state.agents);fixture.snapshot.settings.agent=fixture.state.selectedAgent;
+ if(fixture.state.workspace.status==='ready'){fixture.snapshot.settings.workspace=fixture.state.workspace.path;fixture.snapshot.settings.workspaceMode=fixture.state.workspace.mode;}
+ fixture.snapshot.browser.status=fixture.state.browser.status==='ready'?'ready':'missing';
+};
 fixture.getSnapshot=()=>{fixture.sync();return structuredClone(fixture.snapshot)};
 fixture.release=()=>{fixture.ready=true;for(const resolve of fixture.pendingSnapshots)resolve(fixture.getSnapshot());fixture.pendingSnapshots=[]};
 fixture.update=patch=>{for(const[key,value]of Object.entries(patch)){if(value&&typeof value==='object'&&!Array.isArray(value)&&['codex','workspace','browser','login'].includes(key))fixture.state[key]={...fixture.state[key],...value};else fixture.state[key]=value;}fixture.state.revision++;fixture.sync();fixture.emit({type:'onboarding:state',state:structuredClone(fixture.state)});return structuredClone(fixture.state)};
@@ -50,6 +59,8 @@ window.workbench={async invoke(command,payload){
   if(fixture.state.operation?.kind==='login')return fixture.update({login:{status:'checking'},operation:{...fixture.state.operation,phase:'checking',message:'正在核对登录'}});
   const begun=fixture.begin('detect','正在核对本机 Codex',{status:'in-progress',stage:'codex',plan:undefined,error:undefined,codex:{status:'checking'}});if(fixture.holdNextRefresh){fixture.holdNextRefresh=false;return new Promise(resolve=>{fixture.releaseRefresh=()=>resolve(begun)});}return begun;
  }
+ if(command==='onboarding:agent')return fixture.update({selectedAgent:payload.id,executor:fixture.state.agents.find(agent=>agent.id===payload.id)});
+ if(command==='onboarding:workspace/skip')return fixture.begin('workspace-check','正在准备对话空间…',{stage:'workspace'});
  if(command==='onboarding:plan-install')return fixture.update({plan:{id:'plan-'+fixture.state.revision,kind:payload.kind,version:'fixture-version',sourceUrl:'https://github.com/openai/codex/releases/download/fixture/codex.tar.gz',destination:'/fixture/user/bin/codex',sha256:'a'.repeat(64),changes:['安装用户目录中的 CLI','保留已有登录配置','检查可执行程序启动','不修改其他客户端凭据'],expiresAt:Date.now()+60000},error:undefined});
  if(command==='onboarding:install'){
   if(fixture.state.plan?.id!==payload.planId)throw new Error('安装计划已失效');
@@ -148,10 +159,13 @@ const browser = await chromium.launch({
 const errors: string[] = [];
 const checks: string[] = [];
 let activePage: Page | undefined;
-const createPage = async (mode = 'fresh', dark = false) => {
+const createPage = async (mode = 'fresh', dark = false, animate = false) => {
   const page = await browser.newPage({
     viewport: { width: 1600, height: 1000 },
-    reducedMotion: 'reduce',
+    reducedMotion: animate ? 'no-preference' : 'reduce',
+    ...(animate
+      ? { recordVideo: { dir: path.join(output, 'video'), size: { width: 1280, height: 800 } } }
+      : {}),
   });
   activePage = page;
   await page.addInitScript('window.__name = value => value;');
@@ -175,8 +189,8 @@ try {
   await expect(page.getByRole('status')).toHaveText('正在打开工作区…');
   assert.equal((await calls(page, 'models:list')).length, 0);
   await page.evaluate(() => (window as any).__onboardingFixture.release());
-  await expect(current(page).getByRole('heading')).toHaveText('你好，我是 Athena。');
-  await expect(page.getByRole('progressbar', { name: '准备步骤' })).toHaveAttribute('aria-valuenow', '1');
+  await expect(current(page).getByRole('heading')).toHaveText('hello, Athena.');
+  await expect(page.locator('.onboarding-progress-track')).toHaveAttribute('aria-valuenow', '1');
   await expect(page.locator('.app-workbench')).toHaveCount(0);
   for (const key of ['n', 'l', 't', 'w', 'k', 'b'])
     await page.evaluate(
@@ -206,10 +220,14 @@ try {
     };
   });
   assert.equal(geometry.transcriptWidth, 760);
-  assert.equal(geometry.logo.width, 56);
-  assert.equal(geometry.title.x - geometry.logo.x, 80);
-  assert.equal(geometry.fontSize, '36px');
-  assert.equal(geometry.lineHeight, '48px');
+  assert.equal(geometry.logo.width, 132);
+  assert.ok(
+    Math.abs(
+      geometry.title.x + geometry.title.width / 2 - geometry.logo.x - geometry.logo.width / 2,
+    ) < 1,
+  );
+  assert.ok(geometry.title.top >= geometry.logo.bottom);
+  assert.ok(parseFloat(geometry.fontSize) >= 68);
   assert.ok(parseFloat(geometry.animationDuration) <= 0.08);
   assert.equal(geometry.transform, 'none');
   await page.screenshot({ path: path.join(output, 'welcome.png') });
@@ -218,23 +236,22 @@ try {
   );
 
   await page.getByRole('button', { name: '你能帮我做什么？', exact: true }).click();
-  await page.getByRole('button', { name: '好，一起开始', exact: true }).click();
   await page.evaluate(() => {
     (window as any).__onboardingFixture.holdNextRefresh = true;
   });
-  await page.getByRole('button', { name: '检查本机 Codex', exact: true }).click();
+  await page.getByRole('button', { name: '开始配置', exact: true }).click();
   await expect(current(page)).toContainText('正在核对本机 Codex');
   await update(page, {
     operation: undefined,
     codex: { status: 'missing', authentication: 'unknown' },
   });
-  await expect(current(page)).toContainText('还没有找到 Codex。');
+  await expect(current(page)).toContainText('先准备一位 AI Agent。');
   await page.evaluate(() => (window as any).__onboardingFixture.releaseRefresh());
-  await expect(current(page)).toContainText('还没有找到 Codex。');
-  await page.getByRole('button', { name: '准备安装', exact: true }).click();
+  await expect(current(page)).toContainText('先准备一位 AI Agent。');
+  await page.getByRole('button', { name: '准备安装 Codex', exact: true }).click();
   await expect(current(page)).toContainText('/fixture/user/bin/codex');
   await expect(current(page)).toContainText('待服务器确认');
-  await expect(page.locator('.onboarding-message.user')).toHaveCount(4);
+  await expect(page.locator('.onboarding-message.user')).toHaveCount(3);
   await expect(page.locator('.is-history .onboarding-actions')).toHaveCount(0);
   await page.setViewportSize({ width: 900, height: 760 });
   const scroll = page.locator('.onboarding-scroll');
@@ -321,7 +338,10 @@ try {
     stage: 'workspace',
   });
   await expect(current(page)).toContainText('连接好了。');
-  await expect(page.getByRole('progressbar', { name: '准备步骤' })).toHaveAttribute('aria-valuetext', '第 2 步，共 4 步：连接');
+  await expect(page.getByRole('progressbar', { name: '准备步骤' })).toHaveAttribute(
+    'aria-valuetext',
+    '第 2 步，共 4 步：连接',
+  );
   await expect(later).toBeFocused();
   await page.getByRole('button', { name: '查看连接详情', exact: true }).click();
   await expect(current(page)).toContainText('/fixture/codex');
@@ -329,20 +349,20 @@ try {
   await page.evaluate(() => {
     (window as any).__onboardingFixture.cancelPick = true;
   });
-  await page.getByRole('button', { name: '选择文件夹', exact: true }).click();
+  await page.getByRole('button', { name: '选择项目文件夹', exact: true }).click();
   await expect(current(page)).toContainText('我们在哪里开始？');
   assert.equal(
     await page.evaluate(() => (window as any).__onboardingFixture.snapshot.settings.workspace),
     '/fixture/original',
   );
-  await page.getByRole('button', { name: '选择文件夹', exact: true }).click();
+  await page.getByRole('button', { name: '选择项目文件夹', exact: true }).click();
   await expect(current(page)).toContainText('/fixture/projects/selected');
   assert.equal(
     await page.evaluate(() => (window as any).__onboardingFixture.snapshot.settings.workspace),
     '/fixture/original',
   );
   await page.getByRole('button', { name: '使用这个目录', exact: true }).click();
-  await expect(current(page)).toContainText('正在检查这个工作目录。');
+  await expect(current(page)).toContainText('我确认一下，这个文件夹能不能使用。');
   await update(page, {
     operation: undefined,
     workspace: { status: 'error', error: '此目录当前不可写' },
@@ -360,16 +380,15 @@ try {
       error: undefined,
     },
   });
-  await expect(current(page)).toContainText('也把网页工作准备好？');
+  await expect(current(page)).toContainText('接下来，把网页也接上。');
   checks.push(
     'Login-check click alone never claims success; footer focus is retained on real completion; connected/details remain reachable; directory cancel and candidate selection do not commit; access failure is recoverable',
   );
 
   await page.getByRole('button', { name: '准备浏览器', exact: true }).click();
-  await expect(current(page)).toContainText('正在准备网页工作。');
+  await expect(current(page)).toContainText('我正在打开我们的第一页，稍等一下。');
   await update(page, { operation: undefined, browser: { status: 'ready' }, stage: 'ready' });
-  await expect(current(page)).toContainText('连接、工作目录和网页工具都已就绪。');
-  await page.getByRole('button', { name: '开始吧', exact: true }).click();
+  await expect.poll(async () => (await calls(page, 'onboarding:complete')).length).toBe(1);
   await expect(page.locator('.onboarding')).toBeVisible();
   await expect(page.locator('.app-workbench')).toHaveCount(0);
   await update(page, {
@@ -386,7 +405,7 @@ try {
   assert.equal((await calls(page, 'conversation:send')).length, 0);
   assert.equal((await calls(page, 'onboarding:complete')).length, 1);
   await page.setViewportSize({ width: 1024, height: 768 });
-  await page.getByRole('button', { name: '展开浏览器', exact: true }).click();
+  await expect(page.locator('.browser-toggle')).toHaveAttribute('aria-label', '收起浏览器');
   await expect
     .poll(() =>
       page.locator('.workspace-panels').evaluate((node) => node.getBoundingClientRect().width),
@@ -415,15 +434,14 @@ try {
     )
     .toBe(390);
   checks.push(
-    'One Start click waits for the matching asynchronous complete event, then enters the workbench and refreshes actual directory/agent state without creating or sending a conversation; the newly mounted panel ResizeObserver tracks 1024px viewport and sidebar changes',
+    'Automatic handoff waits for the matching asynchronous complete event, then enters the workbench and refreshes actual directory/agent state without creating or sending a conversation; the newly mounted panel ResizeObserver tracks 1024px viewport and sidebar changes',
   );
   await page.close();
 
   const skip = await createPage('fresh', true);
   await skip.evaluate(() => (window as any).__onboardingFixture.release());
   await expect(skip.locator('html')).toHaveAttribute('data-theme', 'dark');
-  await skip.getByRole('button', { name: '你好，Athena', exact: true }).click();
-  await skip.getByRole('button', { name: '检查本机 Codex', exact: true }).click();
+  await skip.getByRole('button', { name: '开始配置', exact: true }).click();
   await update(skip, {
     operation: undefined,
     codex: { status: 'ready', authentication: 'ready' },
@@ -431,6 +449,7 @@ try {
     coreReady: true,
     stage: 'browser',
   });
+  await skip.getByRole('button', { name: '选择 Codex', exact: true }).click();
   await skip.getByRole('button', { name: '以后再说', exact: true }).click();
   await update(skip, {
     operation: undefined,
@@ -440,22 +459,12 @@ try {
     browser: { status: 'deferred' },
     stage: 'ready',
   });
-  await expect(current(skip)).toContainText('网页工具可以在第一次用到时再准备。');
-  const chrome = await skip.evaluate(() => ({
-    topbar: document.querySelector('.onboarding-topbar')!.getBoundingClientRect().toJSON(),
-    opacity: getComputedStyle(document.querySelector('.onboarding-topbar')!).opacity,
-    scroll: document.querySelector('.onboarding-scroll')!.getBoundingClientRect().toJSON(),
-  }));
-  assert.equal(chrome.topbar.top, 0);
-  assert.equal(chrome.topbar.height, 64);
-  assert.equal(chrome.opacity, '1');
-  assert.equal(chrome.scroll.top, 64);
-  await expect(skip.locator('.app-workbench')).toHaveCount(0);
-  await skip.screenshot({ path: path.join(output, 'browser-deferred-ready.png') });
-  await skip.getByRole('button', { name: '开始吧', exact: true }).click();
   await expect(skip.locator('.onboarding')).toHaveCount(0);
+  await expect(skip.locator('.app-workbench')).toBeVisible();
+  await expect(skip.locator('.browser-drawer')).toHaveAttribute('aria-hidden', 'true');
+  await skip.screenshot({ path: path.join(output, 'browser-deferred-ready.png') });
   checks.push(
-    'Optional browser skip reaches its separate truthful ready state and does not exit until Start is chosen',
+    'Optional browser skip waits for its real completion and enters the workbench without opening an unprepared browser',
   );
   await skip.close();
 
@@ -596,7 +605,7 @@ try {
     },
     stage: 'ready',
   });
-  await transfer.getByRole('button', { name: '开始吧', exact: true }).click();
+  await transfer.getByRole('button', { name: '进入 Athena', exact: true }).click();
   await update(transfer, {
     operation: undefined,
     status: 'complete',
@@ -654,8 +663,7 @@ try {
 
   const cursor = await createPage();
   await cursor.evaluate(() => (window as any).__onboardingFixture.release());
-  await cursor.getByRole('button', { name: '你好，Athena', exact: true }).click();
-  await cursor.getByRole('button', { name: '检查本机 Codex', exact: true }).click();
+  await cursor.getByRole('button', { name: '开始配置', exact: true }).click();
   const cursorInfo = {
     id: 'cursor',
     name: 'Cursor Agent',
@@ -671,18 +679,27 @@ try {
     executor: cursorInfo,
     agents: [cursorInfo],
   });
+  await cursor.getByRole('button', { name: '选择 Cursor Agent', exact: true }).click();
   await expect(current(cursor).locator('.onboarding-status-indicator')).toHaveText([
     '已安装',
     '未登录',
   ]);
   await expect(current(cursor).locator('.onboarding-status-indicator svg')).toHaveCount(2);
   await expect(current(cursor).locator('.onboarding-login-steps > li')).toHaveCount(3);
-  await expect(current(cursor).locator('.onboarding-login-steps > li').first().locator('code')).toHaveText(cursorLogin);
+  await expect(
+    current(cursor).locator('.onboarding-login-steps > li').first().locator('code'),
+  ).toHaveText(cursorLogin);
   await expect(current(cursor).locator('.onboarding-command-header')).toContainText('Shell');
   await expect(current(cursor).locator('.onboarding-status-icon > svg')).toHaveCount(1);
   await expect(current(cursor).locator('.onboarding-status-icon > img')).toHaveCount(0);
-  await expect(cursor.getByRole('progressbar', { name: '准备步骤' })).toHaveAttribute('aria-valuenow', '2');
-  await expect(cursor.getByRole('progressbar', { name: '准备步骤' })).toHaveAttribute('aria-valuetext', '第 2 步，共 4 步：连接');
+  await expect(cursor.getByRole('progressbar', { name: '准备步骤' })).toHaveAttribute(
+    'aria-valuenow',
+    '2',
+  );
+  await expect(cursor.getByRole('progressbar', { name: '准备步骤' })).toHaveAttribute(
+    'aria-valuetext',
+    '第 2 步，共 4 步：连接',
+  );
   await expect(cursor.locator('.onboarding-step-number')).toHaveCount(0);
   await expect(cursor.locator('.onboarding-footer ol')).toHaveCount(0);
   await expect(current(cursor)).toContainText('打开 macOS「终端」');
@@ -718,9 +735,10 @@ try {
     background: getComputedStyle(node).backgroundColor,
     height: node.getBoundingClientRect().height,
   }));
-  assert.notEqual(skipStyle.background, 'rgba(0, 0, 0, 0)', 'Skip must have a visible button surface');
   assert.ok(skipStyle.height >= 44);
-  await expect(current(cursor).getByRole('button', { name: '已复制', exact: true })).toBeInViewport();
+  await expect(
+    current(cursor).getByRole('button', { name: '已复制', exact: true }),
+  ).toBeInViewport();
   await cursor.screenshot({ path: path.join(output, 'cursor-login-1060.png') });
   await update(cursor, {
     executor: { ...cursorInfo, path: "/fixture/Provenr's Cursor/bin/cursor-agent" },
@@ -728,10 +746,10 @@ try {
   await expect(current(cursor).locator('code')).toHaveText(
     "'/fixture/Provenr'\\''s Cursor/bin/cursor-agent' login",
   );
-  await expect(current(cursor).getByRole('button', { name: '复制登录命令', exact: true })).toBeVisible();
-  await current(cursor)
-    .getByRole('button', { name: '我已登录，重新检查', exact: true })
-    .click();
+  await expect(
+    current(cursor).getByRole('button', { name: '复制登录命令', exact: true }),
+  ).toBeVisible();
+  await current(cursor).getByRole('button', { name: '我已登录，重新检查', exact: true }).click();
   await update(cursor, { operation: undefined });
   await expect(current(cursor).locator('.onboarding-status-indicator')).toHaveText([
     '已安装',
@@ -746,22 +764,34 @@ try {
   checks.push(
     'Cursor login distinguishes installation from authentication, shows and copies a shell-quoted command without executing it, and advances only after host authentication succeeds',
   );
+  await cursor.getByRole('button', { name: '先不选文件夹', exact: true }).click();
+  await update(cursor, {
+    operation: undefined,
+    coreReady: true,
+    workspace: { status: 'ready', mode: 'personal', path: '/fixture/personal' },
+  });
+  await expect(current(cursor)).toContainText('进入工作台后新建一个 Codex 对话');
+  checks.push(
+    'A selected non-Codex Agent can prepare the browser without being promised unsupported Agent browser tools',
+  );
   await cursor.close();
 
   const darkCursor = await createPage('fresh', true);
   await darkCursor.evaluate(() => (window as any).__onboardingFixture.release());
-  await darkCursor.getByRole('button', { name: '你好，Athena', exact: true }).click();
-  await darkCursor.getByRole('button', { name: '检查本机 Codex', exact: true }).click();
+  await darkCursor.getByRole('button', { name: '开始配置', exact: true }).click();
   await update(darkCursor, {
     operation: undefined,
     selectedAgent: 'cursor',
     executor: { ...cursorInfo, path: undefined },
     agents: [cursorInfo],
   });
+  await darkCursor.getByRole('button', { name: '选择 Cursor Agent', exact: true }).click();
   await expect(darkCursor.locator('html')).toHaveAttribute('data-theme', 'dark');
   await expect(current(darkCursor).locator('code')).toHaveText('cursor-agent login');
   await darkCursor.screenshot({ path: path.join(output, 'cursor-login-dark.png') });
-  checks.push('Cursor login supports dark mode and falls back to cursor-agent when no path is supplied');
+  checks.push(
+    'Cursor login supports dark mode and falls back to cursor-agent when no path is supplied',
+  );
   await darkCursor.getByRole('button', { name: '跳过设置', exact: true }).click();
   await expect(darkCursor.locator('.onboarding')).toHaveCount(0);
   await expect(darkCursor.getByRole('button', { name: '继续准备', exact: true })).toBeVisible();
@@ -773,8 +803,164 @@ try {
   assert.equal(deferredCursor.executor.authentication, 'missing');
   assert.equal((await calls(darkCursor, 'onboarding:defer')).length, 1);
   assert.equal((await calls(darkCursor, 'conversation:send')).length, 0);
-  checks.push('Skip exits setup without inventing login success, preserves the selected CLI, and keeps sending disabled until readiness is verified');
+  checks.push(
+    'Skip exits setup without inventing login success, preserves the selected CLI, and keeps sending disabled until readiness is verified',
+  );
   await darkCursor.close();
+
+  const flow = await createPage('fresh', false, true);
+  const video = flow.video();
+  await flow.evaluate(() => (window as any).__onboardingFixture.release());
+  await expect(current(flow).getByRole('heading')).toHaveText('hello, Athena.');
+  await expect(flow.locator('.onboarding')).toHaveAttribute('data-intro-ready', 'false');
+  await expect(flow.getByRole('button', { name: '开始配置', exact: true })).toHaveCount(0);
+  await expect(flow.getByRole('button', { name: '开始配置', exact: true })).toBeVisible();
+  await flow.screenshot({ path: path.join(output, 'welcome-motion.png') });
+  const motionSamples = flow.evaluate(
+    () =>
+      new Promise<Array<{ t: number; logoWidth: number; userX?: number }>>((resolve) => {
+        const samples: Array<{ t: number; logoWidth: number; userX?: number }> = [];
+        const started = performance.now();
+        const sample = () => {
+          const logo = document
+            .querySelector('.is-welcome .onboarding-message-heading img')!
+            .getBoundingClientRect();
+          const user = document.querySelector('.onboarding-message.user')?.getBoundingClientRect();
+          samples.push({ t: performance.now() - started, logoWidth: logo.width, userX: user?.x });
+          if (performance.now() - started < 1000) requestAnimationFrame(sample);
+          else resolve(samples);
+        };
+        requestAnimationFrame(sample);
+      }),
+  );
+  await flow.getByRole('button', { name: '开始配置', exact: true }).click();
+  await expect(current(flow)).toHaveAttribute('data-screen', 'detecting');
+  await expect(flow.getByRole('group', { name: '本机 AI Agent' })).toHaveCount(0);
+  const samples = await motionSamples;
+  await expect(current(flow).locator('.onboarding-status-card')).toHaveCount(0);
+  await expect(current(flow).locator('.onboarding-activity-row')).toBeVisible();
+  await expect(
+    current(flow).getByRole('button', { name: '取消这次操作', exact: true }),
+  ).toBeVisible();
+  await flow.screenshot({ path: path.join(output, 'detecting-conversation.png') });
+  assert.ok(
+    samples.some((sample) => sample.logoWidth > 80),
+    'The large logo is preserved at the start of the transition',
+  );
+  assert.ok(
+    samples.some((sample) => sample.logoWidth > 42 && sample.logoWidth < 125),
+    'The portrait must visibly shrink through intermediate sizes',
+  );
+  assert.ok(
+    samples.at(-1)!.logoWidth <= 41,
+    'The portrait settles into a compact conversation avatar',
+  );
+  const userPositions = samples.flatMap((sample) =>
+    sample.userX === undefined ? [] : [sample.userX],
+  );
+  assert.ok(
+    Math.max(...userPositions) - Math.min(...userPositions) > 30,
+    'The selected option moves into a right-aligned user message',
+  );
+  await update(flow, {
+    operation: undefined,
+    codex: { status: 'ready', authentication: 'ready', path: '/fixture/codex' },
+    agents: [
+      {
+        id: 'claude',
+        name: 'Claude Code',
+        available: true,
+        supported: true,
+        authentication: 'unknown',
+      },
+      {
+        id: 'cursor',
+        name: 'Cursor Agent',
+        available: true,
+        supported: true,
+        authentication: 'missing',
+      },
+      { id: 'opencode', name: 'OpenCode', available: true, supported: false },
+      { id: 'gemini', name: 'Gemini CLI', available: false, supported: true },
+    ],
+  });
+  const capsules = flow.getByRole('group', { name: '本机 AI Agent' });
+  await expect(capsules.getByRole('button')).toHaveCount(4);
+  await expect(capsules.locator('.agent-icon')).toHaveCount(4);
+  await expect(capsules.getByRole('button', { name: '选择 OpenCode', exact: true })).toBeDisabled();
+  await expect(capsules.getByRole('button', { name: '选择 Gemini CLI', exact: true })).toHaveCount(
+    0,
+  );
+  await expect
+    .poll(() =>
+      capsules
+        .locator(':scope > div')
+        .evaluateAll((nodes) =>
+          nodes.every(
+            (node) =>
+              Number(getComputedStyle(node).opacity) >= 0.99 &&
+              getComputedStyle(node).transform === 'none',
+          ),
+        ),
+    )
+    .toBe(true);
+  await flow.screenshot({ path: path.join(output, 'agent-capsules.png') });
+  await capsules.getByRole('button', { name: '选择 Codex', exact: true }).click();
+  await flow.getByRole('button', { name: '先不选文件夹', exact: true }).click();
+  assert.equal((await calls(flow, 'onboarding:workspace/pick')).length, 0);
+  await update(flow, {
+    operation: undefined,
+    coreReady: true,
+    stage: 'browser',
+    workspace: { status: 'ready', mode: 'personal', path: '/fixture/personal' },
+  });
+  await flow.getByRole('button', { name: '准备浏览器', exact: true }).click();
+  const history = flow.locator('.onboarding-scroll');
+  await history.dispatchEvent('wheel', { deltaY: -300 });
+  await history.evaluate((node) => {
+    node.scrollTop = 0;
+  });
+  await expect(flow.getByRole('button', { name: '回到最新', exact: true })).toBeVisible();
+  await update(flow, { operation: undefined, browser: { status: 'ready' }, stage: 'ready' });
+  await flow.waitForTimeout(1100);
+  assert.equal(
+    (await calls(flow, 'onboarding:complete')).length,
+    0,
+    'Reading earlier messages pauses the automatic handoff',
+  );
+  await flow.getByRole('button', { name: '回到最新', exact: true }).click();
+  await expect.poll(async () => (await calls(flow, 'onboarding:complete')).length).toBe(1);
+  await expect(flow.getByRole('button', { name: '进入 Athena', exact: true })).toHaveCount(0);
+  await expect(flow.locator('.app-workbench')).toHaveCount(0);
+  await history.dispatchEvent('wheel', { deltaY: -300 });
+  await history.evaluate((node) => {
+    node.scrollTop = 0;
+  });
+  await expect(flow.getByRole('button', { name: '回到最新', exact: true })).toBeVisible();
+  await update(flow, { operation: undefined, status: 'complete', requiresSetup: false });
+  await flow.waitForTimeout(1100);
+  await expect(flow.locator('.onboarding')).toBeVisible();
+  await expect(flow.locator('.app-workbench')).toHaveCount(0);
+  assert.equal(
+    (await calls(flow, 'onboarding:complete')).length,
+    1,
+    'Reading during final verification preserves completion without submitting it again',
+  );
+  await flow.getByRole('button', { name: '回到最新', exact: true }).click();
+  await expect(flow.locator('.app-workbench')).toHaveAttribute('data-onboarding-enter', 'true');
+  await expect(flow.locator('.app-workbench')).toHaveAttribute('inert', '');
+  await expect(flow.locator('.browser-drawer')).toHaveClass(/is-open/);
+  await expect(flow.locator('.onboarding')).toHaveCount(0);
+  await expect(flow.locator('.workspace-selector')).toContainText('不绑定文件夹');
+  await expect(flow.locator('.browser-toggle')).toHaveAttribute('aria-label', '收起浏览器');
+  assert.equal((await calls(flow, 'conversation:send')).length, 0);
+  await flow.screenshot({ path: path.join(output, 'workspace-handoff.png') });
+  await writeFile(path.join(output, 'motion-samples.json'), JSON.stringify(samples, null, 2));
+  await flow.close();
+  await video?.saveAs(path.join(output, 'onboarding-flow.webm'));
+  checks.push(
+    'Animated welcome reveals options after its introduction; logo and chosen reply move continuously into conversation; detected agents have icon capsules; project-free setup hands off to the visible browser without a task submission',
+  );
 
   assert.deepEqual(errors, []);
   await writeFile(
@@ -787,7 +973,6 @@ try {
         realLogins: 0,
         realModelCalls: 0,
         geometry,
-        chrome,
         checks,
         errors,
       },

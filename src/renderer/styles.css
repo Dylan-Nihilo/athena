@@ -108,6 +108,14 @@ select {
   display: block;
 }
 
+:is(.dark, [data-theme='dark']) .agent-icon[data-agent='cursor'] {
+  content: url('./assets/agents/cursor-dark.svg');
+}
+
+:is(.dark, [data-theme='dark']) .agent-icon[data-agent='opencode'] {
+  filter: invert(1);
+}
+
 /* App chrome and navigation. */
 .app-shell {
   height: 100%;

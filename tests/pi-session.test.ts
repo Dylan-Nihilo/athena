@@ -15,7 +15,11 @@ async function fixture(mode = 'normal') {
     `
 const fs=require('node:fs'); const readline=require('node:readline');
 const mode=${JSON.stringify(mode)}; const log=${JSON.stringify(path.join(directory, 'commands.jsonl'))};
-const args=process.argv.slice(2); const si=args.indexOf('--session-id'); const sr=args.indexOf('--session');
+const args=process.argv.slice(2);
+if(args.includes('--help')){console.log('--mode rpc --no-skills --no-prompt-templates');console.log(mode==='builtin-extensions'?'--no-extensions Disable extension discovery and built-in extensions':'--no-extensions --no-mcp');process.exit(0);}
+if(mode==='builtin-extensions'&&args.includes('--no-mcp')){process.stderr.write('Unknown option: --no-mcp');process.exit(2);}
+fs.writeFileSync(${JSON.stringify(path.join(directory, 'arguments.json'))},JSON.stringify(args));
+const si=args.indexOf('--session-id'); const sr=args.indexOf('--session');
 const sid=(mode==='wrong-session'||mode==='wrong-new-session')?'other':args[si>=0?si+1:sr+1];
 const out=r=>process.stdout.write(JSON.stringify(r)+'\\n');
 const response=(r,data)=>out({type:'response',id:r.id,command:r.type,success:true,data});
@@ -111,6 +115,25 @@ test('Pi waits for settled, preserves Unicode framing and never emits thinking',
     );
     await f.session.send('normal');
     assert.equal(f.events.filter((e) => e.type === 'complete').length, 2);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('Pi built-in extension isolation avoids removed flags and retains the host permission extension', async () => {
+  const f = await fixture('builtin-extensions');
+  try {
+    await f.session.prepare();
+    const args = JSON.parse(await readFile(path.join(f.directory, 'arguments.json'), 'utf8'));
+    assert.equal(args.includes('--no-mcp'), false);
+    assert.ok(args.includes('--no-extensions'));
+    assert.ok(args.includes('--no-approve'));
+    assert.equal(
+      args[args.indexOf('--extension') + 1],
+      path.resolve('resources/cli/pi-permissions.mjs'),
+    );
+    await f.session.send('normal');
+    assert.equal(f.events.filter((event) => event.type === 'complete').length, 1);
   } finally {
     await f.cleanup();
   }
